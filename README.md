@@ -26,6 +26,19 @@ BASE_URL=https://artifacts.example.com node server.mjs # 공개 URL 지정
 | GET | `/a/:slug` | sandboxed iframe 뷰어 |
 | GET | `/raw/:slug` | strict CSP 걸린 원본 (iframe src 전용) |
 | GET | `/` | 목록 + 업로드 폼 |
+| GET | `/healthz` | k8s probe (200 `ok`) |
+
+## 팀 배포 (사내 EKS)
+ArgoCD + Kustomize로 `https://lightifact.cardoc.kr` (VPN/사내망) 에 배포한다.
+gitops 매니페스트는 `internal-gitops/internal-tools/lightifact/` 에 준비됨.
+전체 절차(ECR 빌드/푸시 → gitops 머지 → 확인)는 **[DEPLOY.md](./DEPLOY.md)** 참고.
+
+## 스킬 설치 (팀원 각자 1회)
+```bash
+bash .claude/skills/lightifact/install.sh   # → ~/.claude/skills/lightifact/
+```
+설치 후 어느 프로젝트에서든 "이거 공유해줘" / `/lightifact` 로 사용. 기본 대상은 배포 URL,
+로컬은 `export LIGHTIFACT_URL=http://localhost:4321`.
 
 ## 저장 / 격리
 - 저장: `data/<slug>.html` + `<slug>.json` (파일시스템, DB 없음)

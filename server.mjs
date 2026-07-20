@@ -171,6 +171,7 @@ const server = createServer(async (req, res) => {
   try {
     const url = new URL(req.url, BASE_URL);
     const path = url.pathname;
+    if (req.method === 'GET' && path === '/healthz') return send(res, 200, 'ok', { 'Content-Type': 'text/plain' });
     if (req.method === 'POST' && path === '/artifacts') return await createArtifact(req, res, url);
     if (req.method === 'GET' && path === '/') return await serveIndex(req, res);
     let m;
