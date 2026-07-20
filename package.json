@@ -1,0 +1,10 @@
+{
+  "name": "lightifact",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "DB/인증 없이 HTML artifact를 올리고 sandboxed iframe으로 공유하는 초경량 서비스",
+  "scripts": {
+    "start": "node server.mjs"
+  }
+}
