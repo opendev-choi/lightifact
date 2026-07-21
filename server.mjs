@@ -26,16 +26,15 @@ function loadJson(file, fallback) {
 }
 const saveJson = (file, obj) => writeFileSync(file, JSON.stringify(obj, null, 2), 'utf8');
 
+const INVITES_FILE = join(DATA_DIR, 'invites.json');
 let users = loadJson(USERS_FILE, {});       // email → { salt, hash, admin, apiToken, sso }
+let invites = loadJson(INVITES_FILE, {});   // token → { email, exp }
 let settings = loadJson(SETTINGS_FILE, {
   sso: { enabled: false, clientId: '', clientSecret: '', allowedDomain: '' },
 });
 
-// 부트스트랩 admin: users 가 비어 있고 env 가 있으면 seed.
-if (Object.keys(users).length === 0 && process.env.ADMIN_EMAIL && process.env.ADMIN_PASSWORD) {
-  upsertUser(process.env.ADMIN_EMAIL.toLowerCase(), process.env.ADMIN_PASSWORD, { admin: true });
-  console.log(`[auth] bootstrap admin 생성: ${process.env.ADMIN_EMAIL}`);
-}
+const hasUsers = () => Object.keys(users).length > 0;
+const INVITE_TTL = 1000 * 60 * 60 * 72; // 72h
 
 // ── 비밀번호 (scrypt, 내장) ───────────────────────────────────
 function hashPassword(pw, salt = randomBytes(16).toString('hex')) {
@@ -146,6 +145,97 @@ function logout(req, res) {
   redirect(res, '/login');
 }
 
+// ── 최초 실행: admin 셋업 ─────────────────────────────────────
+function serveSetup(req, res) {
+  if (hasUsers()) return redirect(res, '/login');
+  const body = `<div class="login"><h1>🧩 lightifact 시작 설정</h1>
+    <p class="hint">첫 관리자 계정을 만드세요.</p>
+    <form id="lf"><input name="email" type="email" placeholder="관리자 이메일" required autofocus>
+    <input name="password" type="password" placeholder="비밀번호 (8자 이상)" minlength="8" required>
+    <button>관리자 생성</button><div id="err"></div></form></div>
+    <script>document.getElementById('lf').addEventListener('submit',async(e)=>{e.preventDefault();const f=e.target;
+    const r=await fetch('/api/setup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:f.email.value,password:f.password.value})});
+    if(r.ok)location.href='/settings';else{const j=await r.json();document.getElementById('err').textContent=j.error||'실패';}});</script>`;
+  send(res, 200, page('시작 설정', body, 'login'), { 'Content-Type': 'text/html; charset=utf-8' });
+}
+async function apiSetup(req, res) {
+  if (hasUsers()) return json(res, 403, { error: '이미 초기화됨' });
+  const { email = '', password = '' } = await readForm(req);
+  const e = email.toLowerCase().trim();
+  if (!e || password.length < 8) return json(res, 400, { error: '이메일/8자 이상 비밀번호 필요' });
+  upsertUser(e, password, { admin: true });
+  setSessionCookie(res, e);
+  json(res, 200, { ok: true });
+}
+
+// ── 초대 (admin 이 발급 → 초대받은 사람이 비번 설정) ──────────
+function pruneInvites() {
+  let changed = false;
+  for (const [t, v] of Object.entries(invites)) if (Date.now() > v.exp) { delete invites[t]; changed = true; }
+  if (changed) saveJson(INVITES_FILE, invites);
+}
+async function apiInvite(req, res, me) {
+  if (!users[me].admin) return json(res, 403, { error: 'admin only' });
+  const { email = '' } = await readForm(req);
+  const e = email.toLowerCase().trim();
+  if (!e) return json(res, 400, { error: 'email 필요' });
+  const token = randomBytes(24).toString('hex');
+  invites[token] = { email: e, exp: Date.now() + INVITE_TTL };
+  saveJson(INVITES_FILE, invites);
+  redirect(res, '/settings');
+}
+async function apiRevokeInvite(req, res, me) {
+  if (!users[me].admin) return json(res, 403, { error: 'admin only' });
+  const { token = '' } = await readForm(req);
+  delete invites[token]; saveJson(INVITES_FILE, invites);
+  redirect(res, '/settings');
+}
+function serveInvite(req, res, token) {
+  pruneInvites();
+  const inv = invites[token];
+  if (!inv) return send(res, 404, page('초대 만료', '<div class="login"><h1>초대가 유효하지 않습니다</h1><p>만료되었거나 이미 사용됨.</p></div>', 'login'));
+  const body = `<div class="login"><h1>🧩 lightifact 가입</h1>
+    <p class="hint">${esc(inv.email)}</p>
+    <form id="lf"><input type="hidden" name="token" value="${esc(token)}">
+    <input name="password" type="password" placeholder="비밀번호 설정 (8자 이상)" minlength="8" required autofocus>
+    <button>가입 완료</button><div id="err"></div></form></div>
+    <script>document.getElementById('lf').addEventListener('submit',async(e)=>{e.preventDefault();const f=e.target;
+    const r=await fetch('/api/invite/accept',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:f.token.value,password:f.password.value})});
+    if(r.ok)location.href='/';else{const j=await r.json();document.getElementById('err').textContent=j.error||'실패';}});</script>`;
+  send(res, 200, page('가입', body, 'login'), { 'Content-Type': 'text/html; charset=utf-8' });
+}
+async function apiInviteAccept(req, res) {
+  pruneInvites();
+  const { token = '', password = '' } = await readForm(req);
+  const inv = invites[token];
+  if (!inv) return json(res, 400, { error: '초대가 유효하지 않습니다' });
+  if (password.length < 8) return json(res, 400, { error: '비밀번호 8자 이상' });
+  upsertUser(inv.email, password, { admin: false });
+  delete invites[token]; saveJson(INVITES_FILE, invites);
+  setSessionCookie(res, inv.email);
+  json(res, 200, { ok: true });
+}
+
+// ── 내 계정 (모든 사용자: 본인 API 토큰 확인/재발급) ──────────
+function serveAccount(req, res, me) {
+  const u = users[me];
+  const body = `<header class="bar"><a href="/">← lightifact</a><span class="sp"></span>
+    <span class="who">${esc(me)}${u.admin ? ' · admin' : ''}</span><a href="/logout">로그아웃</a></header>
+    <div class="wrap"><h2>내 계정</h2>
+    <p>이메일: <b>${esc(me)}</b></p>
+    <h3>API 토큰 (에이전트 업로드용)</h3>
+    <p><code>${esc(u.apiToken)}</code></p>
+    <form method="post" action="/api/account/token" onsubmit="return confirm('토큰을 재발급하면 기존 토큰은 무효화됩니다.')"><button>토큰 재발급</button></form>
+    <p class="hint">스킬에서 <code>export LIGHTIFACT_TOKEN=&lt;위 토큰&gt;</code> 로 사용.</p>
+    </div>`;
+  send(res, 200, page('내 계정', body, 'app'), { 'Content-Type': 'text/html; charset=utf-8' });
+}
+function apiRegenToken(req, res, me) {
+  users[me].apiToken = 'lf_' + randomBytes(24).toString('hex');
+  saveJson(USERS_FILE, users);
+  redirect(res, '/account');
+}
+
 // ── SSO (Google OAuth code flow + userinfo) ───────────────────
 function ssoConfigured() { const s = settings.sso; return s.enabled && s.clientId && s.clientSecret; }
 function ssoStart(req, res) {
@@ -253,7 +343,7 @@ async function serveIndex(req, res, me) {
     : '<li class="empty">아직 artifact가 없습니다.</li>';
   const admin = users[me]?.admin;
   const body = `<header class="bar"><b>🧩 lightifact</b><span class="sp"></span>
-    <span class="who">${esc(me)}</span>${admin ? '<a href="/settings">설정</a>' : ''}<a href="/logout">로그아웃</a></header>
+    <span class="who">${esc(me)}</span><a href="/account">내 계정</a>${admin ? '<a href="/settings">설정</a>' : ''}<a href="/logout">로그아웃</a></header>
     <div class="wrap"><form id="up"><input name="title" placeholder="제목 (선택)"/>
     <textarea name="html" placeholder="self-contained HTML 붙여넣기..." required></textarea>
     <button>공유 링크 생성</button></form><div id="result"></div>
@@ -266,18 +356,26 @@ async function serveIndex(req, res, me) {
 }
 function serveSettings(req, res, me) {
   if (!users[me].admin) return send(res, 403, page('접근 거부', '<div class="wrap"><h1>403</h1><p>관리자만 접근 가능</p></div>', 'app'));
+  pruneInvites();
   const rows = Object.entries(users).map(([e, u]) => `<tr><td>${esc(e)}</td>
     <td>${u.admin ? '✔' : ''}</td><td>${u.sso ? 'SSO' : 'pw'}</td>
-    <td><code>${esc(u.apiToken)}</code></td>
     <td><form method="post" action="/api/users/delete" onsubmit="return confirm('삭제?')">
     <input type="hidden" name="email" value="${esc(e)}"><button ${e === me ? 'disabled' : ''}>삭제</button></form></td></tr>`).join('');
+  const inviteRows = Object.entries(invites).map(([t, v]) => `<tr><td>${esc(v.email)}</td>
+    <td><code>${esc(BASE_URL)}/invite/${esc(t)}</code></td>
+    <td><form method="post" action="/api/invite/revoke"><input type="hidden" name="token" value="${esc(t)}"><button>취소</button></form></td></tr>`).join('')
+    || '<tr><td colspan="3" class="empty">대기 중인 초대 없음</td></tr>';
   const s = settings.sso;
-  const body = `<header class="bar"><a href="/">← lightifact</a><span class="sp"></span><span class="who">${esc(me)}</span><a href="/logout">로그아웃</a></header>
+  const body = `<header class="bar"><a href="/">← lightifact</a><span class="sp"></span><a href="/account">내 계정</a><span class="who">${esc(me)}</span><a href="/logout">로그아웃</a></header>
     <div class="wrap"><h2>사용자</h2>
-    <table><tr><th>이메일</th><th>admin</th><th>방식</th><th>API 토큰 (에이전트 업로드용)</th><th></th></tr>${rows}</table>
-    <h3>사용자 추가</h3>
+    <table><tr><th>이메일</th><th>admin</th><th>방식</th><th></th></tr>${rows}</table>
+    <h3>초대 (링크 발급 → 본인이 비밀번호 설정, 일반 계정)</h3>
+    <form method="post" action="/api/invite" class="row">
+      <input name="email" type="email" placeholder="초대할 이메일" required><button>초대 링크 생성</button></form>
+    <table><tr><th>초대 이메일</th><th>링크 (전달)</th><th></th></tr>${inviteRows}</table>
+    <h3>직접 추가 (비밀번호 지정)</h3>
     <form method="post" action="/api/users" class="row">
-      <input name="email" placeholder="email" required><input name="password" type="password" placeholder="password" required>
+      <input name="email" type="email" placeholder="email" required><input name="password" type="password" placeholder="password" required>
       <label><input type="checkbox" name="admin"> admin</label><button>추가</button></form>
     <h2>SSO (Google)</h2>
     <form method="post" action="/api/settings/sso">
@@ -335,11 +433,26 @@ const server = createServer(async (req, res) => {
     const path = url.pathname, method = req.method;
 
     if (method === 'GET' && path === '/healthz') return send(res, 200, 'ok', { 'Content-Type': 'text/plain' });
+
+    // 최초 실행: 사용자가 없으면 셋업으로 유도
+    if (!hasUsers()) {
+      if (method === 'GET' && path === '/setup') return serveSetup(req, res);
+      if (method === 'POST' && path === '/api/setup') return await apiSetup(req, res);
+      if (path.startsWith('/api/')) return json(res, 401, { error: 'not initialized' });
+      return redirect(res, '/setup');
+    }
+
+    if (method === 'GET' && path === '/setup') return redirect(res, '/login');
     if (method === 'GET' && path === '/login') return serveLogin(req, res);
     if (method === 'POST' && path === '/api/login') return await apiLogin(req, res);
     if (method === 'GET' && path === '/oauth2/start') return ssoStart(req, res);
     if (method === 'GET' && path === '/oauth2/callback') return await ssoCallback(req, res, url);
     if (method === 'GET' && path === '/logout') return logout(req, res);
+
+    // 초대 수락 (미로그인 오픈)
+    let m;
+    if (method === 'GET' && (m = path.match(/^\/invite\/([a-f0-9]+)$/))) return serveInvite(req, res, m[1]);
+    if (method === 'POST' && path === '/api/invite/accept') return await apiInviteAccept(req, res);
 
     // POST /artifacts: 세션 또는 Bearer 토큰 (writeUser 내부 처리)
     if (method === 'POST' && path === '/artifacts') return await createArtifact(req, res, url);
@@ -351,11 +464,14 @@ const server = createServer(async (req, res) => {
       return redirect(res, '/login');
     }
     if (method === 'GET' && path === '/') return await serveIndex(req, res, me);
+    if (method === 'GET' && path === '/account') return serveAccount(req, res, me);
+    if (method === 'POST' && path === '/api/account/token') return apiRegenToken(req, res, me);
     if (method === 'GET' && path === '/settings') return serveSettings(req, res, me);
     if (method === 'POST' && path === '/api/users') return await apiAddUser(req, res, me);
     if (method === 'POST' && path === '/api/users/delete') return await apiDeleteUser(req, res, me);
+    if (method === 'POST' && path === '/api/invite') return await apiInvite(req, res, me);
+    if (method === 'POST' && path === '/api/invite/revoke') return await apiRevokeInvite(req, res, me);
     if (method === 'POST' && path === '/api/settings/sso') return await apiSaveSso(req, res, me);
-    let m;
     if (method === 'GET' && (m = path.match(/^\/raw\/([^/]+)$/))) return await serveRaw(req, res, m[1]);
     if (method === 'GET' && (m = path.match(/^\/a\/([^/]+)$/))) return await serveViewer(req, res, m[1]);
     send(res, 404, 'not found');
