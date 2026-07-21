@@ -29,7 +29,8 @@ CREATE TABLE IF NOT EXISTS artifacts (
   owner       TEXT NOT NULL,
   html        TEXT NOT NULL,
   bytes       INTEGER NOT NULL,
-  created_at  INTEGER NOT NULL
+  created_at  INTEGER NOT NULL,
+  visibility  TEXT NOT NULL DEFAULT 'public'
 );
 CREATE TABLE IF NOT EXISTS sessions (
   token  TEXT PRIMARY KEY,
@@ -57,6 +58,7 @@ export class DbService implements OnModuleDestroy {
     this.db.pragma('foreign_keys = ON');
     this.db.exec(SCHEMA);
     this.ensureColumn('oauth_states', 'next', "TEXT NOT NULL DEFAULT ''"); // 기존 DB 마이그레이션
+    this.ensureColumn('artifacts', 'visibility', "TEXT NOT NULL DEFAULT 'public'");
     this.logger.log(`SQLite: ${file}`);
   }
 

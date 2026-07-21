@@ -20,11 +20,15 @@ export class AuthController {
   @Get('login')
   @Header('Content-Type', 'text/html; charset=utf-8')
   login(@Query('next') next: string): string {
-    return this.view.login(this.settings.ssoConfigured(), safeNext(next));
+    return this.view.login(this.settings.ssoConfigured(), safeNext(next), this.settings.passwordLoginAllowed());
   }
 
   @Post('api/login')
   apiLogin(@Body() body: { email?: string; password?: string }, @Res() res: Response): void {
+    if (!this.settings.passwordLoginAllowed()) {
+      res.status(403).json({ error: '이 워크스페이스는 Google 로그인만 허용합니다' });
+      return;
+    }
     const email = (body.email || '').toLowerCase().trim();
     const user = this.users.get(email);
     if (!user || !this.passwords.verify(body.password || '', user)) {

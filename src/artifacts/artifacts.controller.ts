@@ -105,16 +105,28 @@ export class ArtifactsController {
     res.redirect('/');
   }
 
+  // 공개 범위 변경 (author 또는 admin)
+  @Post('artifacts/:slug/visibility')
+  @UseGuards(SessionGuard)
+  setVisibility(@Param('slug') slug: string, @Body() body: { visibility?: string }, @CurrentUser() me: string, @Res() res: Response): void {
+    const meta = this.artifacts.meta(slug);
+    if (meta && (meta.owner === me || this.users.get(me)?.admin)) {
+      this.artifacts.setVisibility(slug, body.visibility === 'private' ? 'private' : 'public');
+    }
+    res.redirect(`/a/${slug}`);
+  }
+
   // 뷰어 (sandboxed iframe)
   @Get('a/:slug')
   @UseGuards(SessionGuard)
-  viewer(@Param('slug') slug: string, @Res() res: Response): void {
+  viewer(@Param('slug') slug: string, @CurrentUser() me: string, @Res() res: Response): void {
     const meta = this.artifacts.meta(slug);
     if (!meta) {
       res.status(404).type('text/html').send(this.view.message('Not found', '404', '해당 artifact를 찾을 수 없습니다.'));
       return;
     }
-    res.type('text/html').send(this.view.viewer(meta));
+    const canManage = meta.owner === me || !!this.users.get(me)?.admin;
+    res.type('text/html').send(this.view.viewer(meta, canManage));
   }
 
   // 원본 (strict CSP, iframe 전용)

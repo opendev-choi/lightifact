@@ -23,8 +23,15 @@ export class ViewService {
   }
 
   // ── 로그인 / 셋업 / 초대 ──
-  login(ssoOn: boolean, next = '/'): string {
+  login(ssoOn: boolean, next = '/', passwordLogin = true): string {
     const ssoHref = `/oauth2/start?next=${encodeURIComponent(next)}`;
+    if (!passwordLogin) {
+      // SSO 전용: id/pw 폼 없이 Google 버튼만
+      const body = `<div class="card"><h1>🧩 lightifact</h1>
+        <p class="hint">Google 계정으로 로그인하세요.</p>
+        <a class="ghost" href="${esc(ssoHref)}">Google로 로그인</a></div>`;
+      return this.layout('로그인', body, 'login');
+    }
     const body = `<div class="card"><h1>🧩 lightifact</h1>
       <form id="lf"><input name="email" type="email" placeholder="이메일" autocomplete="username" required autofocus>
       <input name="password" type="password" placeholder="비밀번호" autocomplete="current-password" required><button>로그인</button>
@@ -77,7 +84,8 @@ export class ViewService {
           const del = canDel
             ? `<form class="delf" method="post" action="/artifacts/${esc(m.slug)}/delete" onsubmit="return confirm('이 artifact를 삭제할까요?')"><button class="del" title="삭제">삭제</button></form>`
             : '';
-          return `<li><a href="/a/${esc(m.slug)}">${esc(m.title)}</a> <code>${esc(m.slug.slice(0, 8))}</code> <span class="who">${esc(m.owner)}</span>${del}</li>`;
+          const pv = m.visibility === 'private' ? ' <span class="pv" title="비공개(링크로만)">🔒</span>' : '';
+          return `<li><a href="/a/${esc(m.slug)}">${esc(m.title)}</a>${pv} <code>${esc(m.slug.slice(0, 8))}</code> <span class="who">${esc(m.owner)}</span>${del}</li>`;
         }).join('')
       : `<li class="empty">${nav.onlyMine ? '내가 만든 artifact가 없습니다.' : '아직 artifact가 없습니다.'}</li>`;
     // 필터 탭
@@ -108,9 +116,17 @@ export class ViewService {
     return this.layout('lightifact', body, 'app');
   }
 
-  viewer(meta: ArtifactMeta): string {
+  viewer(meta: ArtifactMeta, canManage: boolean): string {
+    const isPrivate = meta.visibility === 'private';
+    const visCtl = canManage
+      ? `<form class="vis" method="post" action="/artifacts/${esc(meta.slug)}/visibility">
+          <input type="hidden" name="visibility" value="${isPrivate ? 'public' : 'private'}">
+          <button title="클릭해서 전환">${isPrivate ? '🔒 비공개' : '🌐 공개'} → ${isPrivate ? '공개로' : '비공개로'}</button></form>`
+      : isPrivate
+        ? '<span class="pv">🔒 비공개(링크 공유)</span>'
+        : '';
     const body = `<header><a href="/" class="back">← 목록</a><span class="title">${esc(meta.title)}</span>
-      <span class="who">${esc(meta.owner)}</span><a href="/raw/${esc(meta.slug)}" target="_blank">새 탭 ↗</a></header>
+      <span class="who">${esc(meta.owner)}</span>${visCtl}<a href="/raw/${esc(meta.slug)}" target="_blank">새 탭 ↗</a></header>
       <iframe src="/raw/${esc(meta.slug)}" sandbox="allow-scripts allow-popups allow-forms" title="${esc(meta.title)}"></iframe>`;
     return this.layout(meta.title, body, 'viewer');
   }
@@ -147,6 +163,7 @@ export class ViewService {
       <input name="clientSecret" type="password" placeholder="Google Client Secret ${sso.clientSecret ? '(설정됨 — 변경 시 입력)' : ''}">
       <input name="allowedDomain" placeholder="허용 도메인 (예: cardoc.kr, 비우면 전체)" value="${esc(sso.allowedDomain)}">
       <label><input type="checkbox" name="autoJoin" ${sso.autoJoin ? 'checked' : ''}> 허용 도메인 계정 <b>자동 가입</b> (끄면 초대/기존 사용자만 로그인)</label>
+      <label><input type="checkbox" name="ssoOnly" ${sso.ssoOnly ? 'checked' : ''}> <b>SSO 전용</b> (로그인 화면에서 id/pw 제거, 비밀번호 로그인 차단 — SSO 설정된 경우만 적용)</label>
       <button>저장</button></form>
       <p class="hint">리디렉션 URI: <code>${esc(this.baseUrl)}/oauth2/callback</code> 를 Google 콘솔에 등록하세요.</p></div>`;
     return this.layout('설정', body, 'app');
@@ -175,7 +192,9 @@ const MODE_CSS: Record<Mode, string> = {
     .err{color:#e5484d;font-size:13px;min-height:16px}`,
   viewer: `body{display:flex;flex-direction:column;height:100vh}
     header{display:flex;align-items:center;gap:14px;padding:10px 16px;border-bottom:1px solid #8883}
-    header .title{font-weight:600;flex:1}header a{color:#4571ff;text-decoration:none;font-size:13px}iframe{flex:1;border:0}`,
+    header .title{font-weight:600;flex:1}header a{color:#4571ff;text-decoration:none;font-size:13px}iframe{flex:1;border:0}
+    header .vis button{font:inherit;font-size:12px;padding:4px 10px;border:1px solid #8886;border-radius:8px;background:transparent;color:inherit;cursor:pointer}
+    header .pv{font-size:12px;color:#888}`,
   app: `.bar{display:flex;align-items:center;gap:14px;padding:10px 16px;border-bottom:1px solid #8883}
     .bar .sp{flex:1}.bar a{color:#4571ff;text-decoration:none;font-size:13px}
     .wrap{max-width:820px;margin:0 auto;padding:24px 20px}h2{font-size:16px;margin-top:28px}h3{font-size:14px;margin-top:20px}

@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { DbService } from '../db/db.service';
 import { SsoSettings } from '../common/types';
 
-const DEFAULT_SSO: SsoSettings = { enabled: false, clientId: '', clientSecret: '', allowedDomain: '', autoJoin: false };
+const DEFAULT_SSO: SsoSettings = { enabled: false, clientId: '', clientSecret: '', allowedDomain: '', autoJoin: false, ssoOnly: false };
 
 @Injectable()
 export class SettingsService {
@@ -33,6 +33,11 @@ export class SettingsService {
     return s.enabled && !!s.clientId && !!s.clientSecret;
   }
 
+  // 비밀번호 로그인 허용 여부. SSO-only 라도 SSO 미설정이면 잠금 방지 위해 허용.
+  passwordLoginAllowed(): boolean {
+    return !(this.sso.ssoOnly && this.ssoConfigured());
+  }
+
   updateSso(patch: Partial<SsoSettings>): void {
     const current = this.sso;
     const next: SsoSettings = {
@@ -42,6 +47,7 @@ export class SettingsService {
       clientSecret: (patch.clientSecret || current.clientSecret || '').trim(),
       allowedDomain: (patch.allowedDomain ?? '').trim(),
       autoJoin: patch.autoJoin ?? false,
+      ssoOnly: patch.ssoOnly ?? false,
     };
     this.write('sso', next);
   }

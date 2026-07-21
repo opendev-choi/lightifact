@@ -43,9 +43,13 @@ export class ArtifactsService {
   create(html: string, title: string, owner: string): { slug: string; url: string } {
     const slug = randomUUID();
     this.sql
-      .prepare('INSERT INTO artifacts (slug, title, owner, html, bytes, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+      .prepare("INSERT INTO artifacts (slug, title, owner, html, bytes, created_at, visibility) VALUES (?, ?, ?, ?, ?, ?, 'public')")
       .run(slug, title?.trim() || 'Untitled artifact', owner, html, Buffer.byteLength(html), Date.now());
     return { slug, url: `${this.baseUrl}/a/${slug}` };
+  }
+
+  setVisibility(slug: string, visibility: 'public' | 'private'): void {
+    this.sql.prepare('UPDATE artifacts SET visibility = ? WHERE slug = ?').run(visibility, slug);
   }
 
   has(slug: string): boolean {
@@ -60,25 +64,26 @@ export class ArtifactsService {
 
   meta(slug: string): ArtifactMeta | null {
     if (!this.isValidSlug(slug)) return null;
-    const row = this.sql.prepare('SELECT slug, title, owner, bytes FROM artifacts WHERE slug = ?').get(slug) as ArtifactMeta | undefined;
+    const row = this.sql.prepare('SELECT slug, title, owner, bytes, visibility FROM artifacts WHERE slug = ?').get(slug) as ArtifactMeta | undefined;
     return row ?? null;
   }
 
+  // owner 지정 시: 그 사용자의 전체(공개+비공개). 미지정(전체 탭): 공개(public)만.
   list(opts: { owner?: string; limit: number; offset: number }): ArtifactMeta[] {
     if (opts.owner) {
       return this.sql
-        .prepare('SELECT slug, title, owner, bytes FROM artifacts WHERE owner = ? ORDER BY created_at DESC LIMIT ? OFFSET ?')
+        .prepare('SELECT slug, title, owner, bytes, visibility FROM artifacts WHERE owner = ? ORDER BY created_at DESC LIMIT ? OFFSET ?')
         .all(opts.owner, opts.limit, opts.offset) as ArtifactMeta[];
     }
     return this.sql
-      .prepare('SELECT slug, title, owner, bytes FROM artifacts ORDER BY created_at DESC LIMIT ? OFFSET ?')
+      .prepare("SELECT slug, title, owner, bytes, visibility FROM artifacts WHERE visibility = 'public' ORDER BY created_at DESC LIMIT ? OFFSET ?")
       .all(opts.limit, opts.offset) as ArtifactMeta[];
   }
 
   count(owner?: string): number {
     const row = owner
       ? this.sql.prepare('SELECT COUNT(*) AS n FROM artifacts WHERE owner = ?').get(owner)
-      : this.sql.prepare('SELECT COUNT(*) AS n FROM artifacts').get();
+      : this.sql.prepare("SELECT COUNT(*) AS n FROM artifacts WHERE visibility = 'public'").get();
     return (row as { n: number }).n;
   }
 

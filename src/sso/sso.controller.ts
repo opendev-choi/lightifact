@@ -58,7 +58,7 @@ export class SsoController {
   @Post('api/settings/sso')
   @UseGuards(SessionGuard, AdminGuard)
   saveSso(
-    @Body() body: { enabled?: string; clientId?: string; clientSecret?: string; allowedDomain?: string; autoJoin?: string },
+    @Body() body: { enabled?: string; clientId?: string; clientSecret?: string; allowedDomain?: string; autoJoin?: string; ssoOnly?: string },
     @Res() res: Response,
   ): void {
     this.settings.updateSso({
@@ -67,6 +67,7 @@ export class SsoController {
       clientSecret: body.clientSecret,
       allowedDomain: body.allowedDomain,
       autoJoin: body.autoJoin === 'on',
+      ssoOnly: body.ssoOnly === 'on',
     });
     res.redirect('/settings');
   }
