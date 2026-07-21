@@ -8,7 +8,7 @@ import { readFile } from 'node:fs/promises';
 const args = process.argv.slice(2);
 const upIdx = args.indexOf('--update');
 const slug = upIdx >= 0 ? args[upIdx + 1] : '';
-const positional = args.filter((a, i) => a !== '--update' && i !== upIdx + 1);
+const positional = args.filter((a, i) => a !== '--update' && !(upIdx >= 0 && i === upIdx + 1));
 const [filePath, title = ''] = positional;
 
 const BASE_URL = process.env.LIGHTIFACT_URL || process.env.BASE_URL || 'https://lightifact.cardoc.kr';
