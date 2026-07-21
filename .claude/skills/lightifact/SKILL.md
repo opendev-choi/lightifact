@@ -28,10 +28,19 @@ node <skill-dir>/share.mjs <html파일경로> "제목"
 ```
 헬퍼는 `{ "slug": "...", "url": "https://lightifact.cardoc.kr/a/..." }` 를 출력한다.
 
+**기존 artifact 수정(덮어쓰기, 같은 링크 유지)** — 사용자가 "이거 고쳐서 업데이트해줘" 처럼
+이미 공유한 것을 바꾸길 원할 때. 기존 URL의 `slug` 를 넘긴다:
+```bash
+node <skill-dir>/share.mjs <html파일경로> "제목" --update <slug>
+```
+(본인 소유 또는 admin 만 가능. 링크는 그대로, 내용만 갱신된다.)
+
 curl로 직접 올려도 된다:
 ```bash
 curl -s -X POST "https://lightifact.cardoc.kr/artifacts?title=제목" \
-  -H "Content-Type: text/html" --data-binary @<html파일경로>
+  -H "Content-Type: text/html" --data-binary @<html파일경로>          # 생성
+curl -s -X PUT  "https://lightifact.cardoc.kr/artifacts/<slug>?title=제목" \
+  -H "Content-Type: text/html" --data-binary @<html파일경로>          # 수정(덮어쓰기)
 ```
 
 ### 3. 결과 전달

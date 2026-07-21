@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Header, Param, Post, Query, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Header, Param, Post, Put, Query, Res, UseGuards } from '@nestjs/common';
 import { Response } from 'express';
 import { ArtifactsService, RAW_CSP } from './artifacts.service';
 import { UsersService } from '../users/users.service';
@@ -47,6 +47,42 @@ export class ArtifactsController {
   index(@CurrentUser() me: string): string {
     const u = this.users.get(me);
     return this.view.index(me, !!u?.admin, this.artifacts.list(), u?.apiToken ?? '');
+  }
+
+  // 덮어쓰기 (본인 소유 또는 admin) — slug·링크 유지
+  @Put('artifacts/:slug')
+  @UseGuards(WriteGuard)
+  update(
+    @Param('slug') slug: string,
+    @Body() body: unknown,
+    @Query('title') qTitle: string | undefined,
+    @CurrentUser() me: string,
+    @Res() res: Response,
+  ): void {
+    const meta = this.artifacts.meta(slug);
+    if (!meta) {
+      res.status(404).json({ error: 'not found' });
+      return;
+    }
+    if (meta.owner !== me && !this.users.get(me)?.admin) {
+      res.status(403).json({ error: '권한 없음 (본인 소유 또는 admin만 수정 가능)' });
+      return;
+    }
+    let html: string | undefined;
+    let title = qTitle ?? meta.title;
+    if (typeof body === 'string') {
+      html = body;
+    } else if (body && typeof body === 'object') {
+      const b = body as { html?: string; title?: string };
+      html = b.html;
+      if (b.title !== undefined) title = b.title;
+    }
+    if (!html || !html.trim()) {
+      res.status(400).json({ error: 'html body is empty' });
+      return;
+    }
+    this.artifacts.update(slug, html, title);
+    res.json({ slug, url: this.artifacts.shareUrl(slug), owner: meta.owner, updated: true });
   }
 
   // 삭제 (본인 소유 또는 admin)

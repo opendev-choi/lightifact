@@ -36,6 +36,10 @@ export class ArtifactsService {
     return SLUG_RE.test(slug);
   }
 
+  shareUrl(slug: string): string {
+    return `${this.baseUrl}/a/${slug}`;
+  }
+
   create(html: string, title: string, owner: string): { slug: string; url: string } {
     const slug = randomUUID();
     this.sql
@@ -66,5 +70,12 @@ export class ArtifactsService {
 
   delete(slug: string): void {
     this.sql.prepare('DELETE FROM artifacts WHERE slug = ?').run(slug);
+  }
+
+  // 덮어쓰기 (slug·owner·created_at 유지, html/title 갱신)
+  update(slug: string, html: string, title: string): void {
+    this.sql
+      .prepare('UPDATE artifacts SET html = ?, bytes = ?, title = ? WHERE slug = ?')
+      .run(html, Buffer.byteLength(html), title, slug);
   }
 }
