@@ -63,16 +63,32 @@ export class ViewService {
       <span class="who">${esc(me)}</span><a href="/account">내 계정</a>${admin ? '<a href="/settings">설정</a>' : ''}<a href="/logout">로그아웃</a></header>`;
   }
 
-  index(me: string, admin: boolean, items: ArtifactMeta[], token: string): string {
+  index(
+    me: string,
+    admin: boolean,
+    items: ArtifactMeta[],
+    token: string,
+    nav: { onlyMine: boolean; page: number; totalPages: number; total: number },
+  ): string {
+    const meNorm = me.trim().toLowerCase();
     const list = items.length
       ? items.map((m) => {
-          const canDel = admin || m.owner === me;
+          const canDel = admin || (m.owner ?? '').trim().toLowerCase() === meNorm;
           const del = canDel
             ? `<form class="delf" method="post" action="/artifacts/${esc(m.slug)}/delete" onsubmit="return confirm('이 artifact를 삭제할까요?')"><button class="del" title="삭제">삭제</button></form>`
             : '';
           return `<li><a href="/a/${esc(m.slug)}">${esc(m.title)}</a> <code>${esc(m.slug.slice(0, 8))}</code> <span class="who">${esc(m.owner)}</span>${del}</li>`;
         }).join('')
-      : '<li class="empty">아직 artifact가 없습니다.</li>';
+      : `<li class="empty">${nav.onlyMine ? '내가 만든 artifact가 없습니다.' : '아직 artifact가 없습니다.'}</li>`;
+    // 필터 탭
+    const tab = (label: string, mine: number, active: boolean) =>
+      `<a class="tab${active ? ' on' : ''}" href="/?mine=${mine}">${label}</a>`;
+    const tabs = `<div class="tabs">${tab('전체', 0, !nav.onlyMine)}${tab('내가 만든 것', 1, nav.onlyMine)}<span class="total">${nav.total}개</span></div>`;
+    // 페이지네이션
+    const q = nav.onlyMine ? '&mine=1' : '';
+    const prev = nav.page > 1 ? `<a href="/?page=${nav.page - 1}${q}">← 이전</a>` : '<span class="off">← 이전</span>';
+    const next = nav.page < nav.totalPages ? `<a href="/?page=${nav.page + 1}${q}">다음 →</a>` : '<span class="off">다음 →</span>';
+    const pager = nav.totalPages > 1 ? `<div class="pager">${prev}<span>${nav.page} / ${nav.totalPages}</span>${next}</div>` : '';
     const aiPrompt = `lightifact 스킬을 설치하고 첫 아티팩트를 공유해줘.
 
 1. https://github.com/opendev-choi/lightifact 의 .claude/skills/lightifact/ 에서 SKILL.md, share.mjs 를 받아 ~/.claude/skills/lightifact/ 에 넣어줘.
@@ -81,8 +97,10 @@ export class ViewService {
     const body = `${this.bar(me, admin)}<div class="wrap">
       <h2>공유된 artifact</h2>
       <p class="hint">업로드는 Claude Code 스킬 <code>/lightifact</code> 또는 API 토큰(Bearer)으로.</p>
+      ${tabs}
       <ul class="list">${list}</ul>
-      <details class="setup" open><summary>🚀 처음이세요? — Claude Code에 이 프롬프트를 붙여넣으세요</summary>
+      ${pager}
+      <details class="setup"><summary>🚀 처음이세요? — Claude Code에 이 프롬프트를 붙여넣으세요</summary>
         <p class="hint">스킬 설치 → 토큰 설정(<code>${esc(me)}</code>) → 데모 아티팩트 생성·공유까지 한 번에 실행됩니다.</p>
         <pre id="prompt">${esc(aiPrompt)}</pre>
         <button class="copy" onclick="navigator.clipboard.writeText(document.getElementById('prompt').textContent).then(()=>{this.textContent='프롬프트 복사됨 ✓'})">프롬프트 복사</button>
@@ -169,7 +187,13 @@ const MODE_CSS: Record<Mode, string> = {
     .list{list-style:none;padding:0}.list li{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #8882}
     .delf{margin-left:auto}.del{background:transparent;color:#e5484d;border:1px solid #8886;padding:3px 9px;font-size:12px;font-weight:500}
     #result{margin:10px 0;font-size:14px}.tok{font-size:13px;word-break:break-all}
-    .setup{margin:6px 0 20px;border:1px solid #8886;border-radius:10px;padding:12px 14px}
+    .tabs{display:flex;align-items:center;gap:6px;margin:6px 0 4px}
+    .tab{font-size:13px;padding:5px 12px;border-radius:999px;text-decoration:none;color:inherit;border:1px solid #8886}
+    .tab.on{background:#4571ff;color:#fff;border-color:#4571ff}
+    .tabs .total{margin-left:auto;color:#888;font-size:12px}
+    .pager{display:flex;align-items:center;justify-content:center;gap:16px;margin:16px 0;font-size:13px}
+    .pager .off{color:#8885}
+    .setup{margin:20px 0 20px;border:1px solid #8886;border-radius:10px;padding:12px 14px}
     .setup summary{cursor:pointer;font-weight:600;font-size:14px}
     .setup pre{margin:10px 0 0;background:#8881;padding:11px;border-radius:8px;font-size:12px;line-height:1.5;white-space:pre-wrap;word-break:break-all;font-family:ui-monospace,monospace}
     .copy{margin-top:8px;padding:5px 12px;font-size:12px}`,

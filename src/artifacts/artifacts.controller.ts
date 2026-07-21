@@ -44,9 +44,18 @@ export class ArtifactsController {
   @Get()
   @UseGuards(SessionGuard)
   @Header('Content-Type', 'text/html; charset=utf-8')
-  index(@CurrentUser() me: string): string {
+  index(@CurrentUser() me: string, @Query('mine') mine?: string, @Query('page') pageQ?: string): string {
     const u = this.users.get(me);
-    return this.view.index(me, !!u?.admin, this.artifacts.list(), u?.apiToken ?? '');
+    const PAGE_SIZE = 20;
+    const onlyMine = mine === '1';
+    const owner = onlyMine ? me : undefined;
+    const total = this.artifacts.count(owner);
+    const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+    let page = parseInt(pageQ ?? '1', 10);
+    if (!Number.isFinite(page) || page < 1) page = 1;
+    if (page > totalPages) page = totalPages;
+    const items = this.artifacts.list({ owner, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE });
+    return this.view.index(me, !!u?.admin, items, u?.apiToken ?? '', { onlyMine, page, totalPages, total });
   }
 
   // 덮어쓰기 (본인 소유 또는 admin) — slug·링크 유지

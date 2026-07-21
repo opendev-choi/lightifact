@@ -64,8 +64,22 @@ export class ArtifactsService {
     return row ?? null;
   }
 
-  list(): ArtifactMeta[] {
-    return this.sql.prepare('SELECT slug, title, owner, bytes FROM artifacts ORDER BY created_at DESC').all() as ArtifactMeta[];
+  list(opts: { owner?: string; limit: number; offset: number }): ArtifactMeta[] {
+    if (opts.owner) {
+      return this.sql
+        .prepare('SELECT slug, title, owner, bytes FROM artifacts WHERE owner = ? ORDER BY created_at DESC LIMIT ? OFFSET ?')
+        .all(opts.owner, opts.limit, opts.offset) as ArtifactMeta[];
+    }
+    return this.sql
+      .prepare('SELECT slug, title, owner, bytes FROM artifacts ORDER BY created_at DESC LIMIT ? OFFSET ?')
+      .all(opts.limit, opts.offset) as ArtifactMeta[];
+  }
+
+  count(owner?: string): number {
+    const row = owner
+      ? this.sql.prepare('SELECT COUNT(*) AS n FROM artifacts WHERE owner = ?').get(owner)
+      : this.sql.prepare('SELECT COUNT(*) AS n FROM artifacts').get();
+    return (row as { n: number }).n;
   }
 
   delete(slug: string): void {
