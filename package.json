@@ -2,9 +2,28 @@
   "name": "lightifact",
   "version": "0.1.0",
   "private": true,
-  "type": "module",
-  "description": "DB/인증 없이 HTML artifact를 올리고 sandboxed iframe으로 공유하는 초경량 서비스",
+  "description": "경량 artifact 공유 서비스 (NestJS)",
   "scripts": {
-    "start": "node server.mjs"
+    "build": "nest build",
+    "start": "node dist/main.js",
+    "start:dev": "nest start --watch",
+    "lint": "eslint \"src/**/*.ts\""
+  },
+  "dependencies": {
+    "@nestjs/common": "^10.4.4",
+    "@nestjs/config": "^3.2.3",
+    "@nestjs/core": "^10.4.4",
+    "@nestjs/platform-express": "^10.4.4",
+    "cookie-parser": "^1.4.7",
+    "joi": "^17.13.3",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.1"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "^10.4.5",
+    "@types/cookie-parser": "^1.4.7",
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.7.4",
+    "typescript": "^5.6.2"
   }
 }

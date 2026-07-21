@@ -1,5 +1,6 @@
-.git
-data
 node_modules
+dist
+data
+.git
 .claude
-README.md
+*.md

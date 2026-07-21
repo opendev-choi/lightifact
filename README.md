@@ -1,19 +1,26 @@
 # 🧩 lightifact
 
-DB·인증 없이 HTML artifact를 올리고 **sandboxed iframe**으로 공유하는 초경량 서비스.
-의존성 0개 (Node 내장 모듈만 사용).
+HTML artifact를 올리고 **sandboxed iframe**으로 공유하는 경량 서비스.
+**NestJS + TypeScript**, 서버렌더 UI, 저장은 파일시스템(무DB).
 
 ## 실행 (로컬)
 ```bash
-SESSION_SECRET=dev ADMIN_EMAIL=me@cardoc.kr ADMIN_PASSWORD=pw node server.mjs
-# http://localhost:4321 → 로그인(위 admin) → 사용 / /settings 에서 사용자·SSO 관리
+npm install
+npm run build && SESSION_SECRET=dev-secret-key npm start   # 또는: npm run start:dev
+# http://localhost:4321 → 첫 접속 시 /setup 에서 관리자 계정 생성 → 로그인
 ```
 
 ## 인증
 - **읽기·쓰기 전부 로그인 필요.** email+password (또는 설정 시 Google SSO).
-- 최초 admin 은 `ADMIN_EMAIL`/`ADMIN_PASSWORD` env 로 seed, 이후 `/settings` 에서 관리.
-- 에이전트 업로드는 사용자별 **API 토큰**(Bearer, `/settings` 에서 확인).
-- 세션은 서명 쿠키(HMAC, 무상태), 비밀번호는 scrypt. 저장은 PVC의 `users.json`/`settings.json`.
+- **최초 실행 시 `/setup` 화면**에서 첫 관리자 생성. 이후 admin 이 `/settings` 에서 사용자 추가·초대·SSO 관리.
+- 일반 사용자는 관리 기능 없음. 본인 API 토큰은 `/account` 에서 확인.
+- 에이전트 업로드는 사용자별 **API 토큰**(Bearer).
+- 세션=서명 쿠키(HMAC, 무상태), 비밀번호=scrypt. 저장은 `users.json`/`settings.json`/`invites.json`(PVC).
+
+## 구조 (NestJS 모듈)
+`auth`(로그인/셋업/초대·세션·scrypt) · `users`(사용자/초대) · `settings`(SSO 설정) ·
+`sso`(Google OAuth) · `artifacts`(업로드/뷰어/CSP) · `store`(JSON 파일 저장) · `views`(서버렌더).
+config는 `@nestjs/config` + Joi 검증(`SESSION_SECRET` 등).
 
 ## 사용
 - 웹: 로그인 → HTML 붙여넣고 "공유 링크 생성"
@@ -35,8 +42,8 @@ SESSION_SECRET=dev ADMIN_EMAIL=me@cardoc.kr ADMIN_PASSWORD=pw node server.mjs
 | GET | `/healthz` | k8s probe (200 `ok`) |
 
 ## 팀 배포 (사내 EKS)
-ArgoCD + Kustomize로 `https://lightifact.cardoc.kr` (VPN/사내망) 에 배포한다.
-gitops 매니페스트는 `internal-gitops/internal-tools/lightifact/` 에 준비됨.
+ArgoCD + Helm chart로 `https://lightifact.cardoc.kr` (VPN/사내망) 에 배포한다.
+Helm chart는 `internal-gitops/internal-tools/lightifact/` 에 준비됨.
 전체 절차(ECR 빌드/푸시 → gitops 머지 → 확인)는 **[DEPLOY.md](./DEPLOY.md)** 참고.
 
 ## 스킬 설치 (팀원 각자 1회)
