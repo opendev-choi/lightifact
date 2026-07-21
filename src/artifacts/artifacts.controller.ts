@@ -48,6 +48,17 @@ export class ArtifactsController {
     return this.view.index(me, !!this.users.get(me)?.admin, this.artifacts.list());
   }
 
+  // 삭제 (본인 소유 또는 admin)
+  @Post('artifacts/:slug/delete')
+  @UseGuards(SessionGuard)
+  deleteArtifact(@Param('slug') slug: string, @CurrentUser() me: string, @Res() res: Response): void {
+    const meta = this.artifacts.meta(slug);
+    if (meta && (meta.owner === me || this.users.get(me)?.admin)) {
+      this.artifacts.delete(slug);
+    }
+    res.redirect('/');
+  }
+
   // 뷰어 (sandboxed iframe)
   @Get('a/:slug')
   @UseGuards(SessionGuard)

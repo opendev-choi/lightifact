@@ -63,4 +63,8 @@ export class ArtifactsService {
   list(): ArtifactMeta[] {
     return this.sql.prepare('SELECT slug, title, owner, bytes FROM artifacts ORDER BY created_at DESC').all() as ArtifactMeta[];
   }
+
+  delete(slug: string): void {
+    this.sql.prepare('DELETE FROM artifacts WHERE slug = ?').run(slug);
+  }
 }

@@ -48,11 +48,22 @@ Helm chart는 `internal-gitops/internal-tools/lightifact/` 에 준비됨.
 전체 절차(ECR 빌드/푸시 → gitops 머지 → 확인)는 **[DEPLOY.md](./DEPLOY.md)** 참고.
 
 ## 스킬 설치 (팀원 각자 1회)
+
+**온라인 원라이너** (clone 없이 바로 설치):
 ```bash
-bash .claude/skills/lightifact/install.sh   # → ~/.claude/skills/lightifact/
+D=~/.claude/skills/lightifact; mkdir -p "$D"; for f in SKILL.md share.mjs; do curl -fsSL "https://raw.githubusercontent.com/opendev-choi/lightifact/main/.claude/skills/lightifact/$f" -o "$D/$f"; done && echo "✅ lightifact 스킬 설치됨: $D"
 ```
-설치 후 어느 프로젝트에서든 "이거 공유해줘" / `/lightifact` 로 사용. 기본 대상은 배포 URL,
-로컬은 `export LIGHTIFACT_URL=http://localhost:4321`.
+
+또는 clone 후:
+```bash
+bash .claude/skills/lightifact/install.sh
+```
+
+설치 후 어느 프로젝트에서든 "이거 공유해줘" / `/lightifact` 로 사용. 이어서 토큰만 셸에 넣으면 끝:
+```bash
+export LIGHTIFACT_TOKEN=<본인 API 토큰>    # lightifact.cardoc.kr/account 에서 발급
+# 로컬 서버로 붙일 땐: export LIGHTIFACT_URL=http://localhost:4321
+```
 
 ## 저장 / 격리
 - 저장: **SQLite** `data/lightifact.db` (사용자·세션·초대·설정·artifact). PVC 파일 하나.

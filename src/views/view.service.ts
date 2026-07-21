@@ -65,7 +65,13 @@ export class ViewService {
 
   index(me: string, admin: boolean, items: ArtifactMeta[]): string {
     const list = items.length
-      ? items.map((m) => `<li><a href="/a/${esc(m.slug)}">${esc(m.title)}</a> <code>${esc(m.slug.slice(0, 8))}</code> <span class="who">${esc(m.owner)}</span></li>`).join('')
+      ? items.map((m) => {
+          const canDel = admin || m.owner === me;
+          const del = canDel
+            ? `<form class="delf" method="post" action="/artifacts/${esc(m.slug)}/delete" onsubmit="return confirm('이 artifact를 삭제할까요?')"><button class="del" title="삭제">삭제</button></form>`
+            : '';
+          return `<li><a href="/a/${esc(m.slug)}">${esc(m.title)}</a> <code>${esc(m.slug.slice(0, 8))}</code> <span class="who">${esc(m.owner)}</span>${del}</li>`;
+        }).join('')
       : '<li class="empty">아직 artifact가 없습니다.</li>';
     const body = `${this.bar(me, admin)}<div class="wrap">
       <form id="up"><input name="title" placeholder="제목 (선택)">
@@ -155,6 +161,7 @@ const MODE_CSS: Record<Mode, string> = {
     textarea{min-height:150px;font-family:ui-monospace,monospace}
     button{padding:9px 14px;border:0;border-radius:8px;background:#4571ff;color:#fff;font-weight:600;cursor:pointer}
     table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;padding:7px 8px;border-bottom:1px solid #8882}
-    .list{list-style:none;padding:0}.list li{padding:8px 0;border-bottom:1px solid #8882}
+    .list{list-style:none;padding:0}.list li{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #8882}
+    .delf{margin-left:auto}.del{background:transparent;color:#e5484d;border:1px solid #8886;padding:3px 9px;font-size:12px;font-weight:500}
     #result{margin:10px 0;font-size:14px}.tok{font-size:13px;word-break:break-all}`,
 };
