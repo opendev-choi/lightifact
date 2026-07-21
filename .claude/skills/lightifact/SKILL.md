@@ -9,10 +9,10 @@ HTML 한 덩어리를 사내 `lightifact` 서비스에 업로드하고 공유 UR
 링크를 아는 사람은 사내망/VPN에서 브라우저로 열람할 수 있다.
 
 ## 전제
-- 배포 주소: `https://lightifact.cardoc.kr` (사내망/VPN only)
-- 업로드 인증: 환경변수 `LIGHTIFACT_TOKEN` (share.mjs 가 Bearer 헤더로 자동 전송).
-  미설정 상태로 배포 서버에 올리면 401 → 셸에 토큰을 export 할 것.
-- 로컬 테스트 시: `LIGHTIFACT_URL=http://localhost:4321` (로컬은 토큰 없이도 익명 허용)
+- 배포 주소: `https://lightifact.cardoc.kr` (사내망/VPN only, 읽기·쓰기 전부 로그인 필요)
+- 업로드 인증: 환경변수 `LIGHTIFACT_TOKEN` = 본인 **API 토큰**(웹 `/settings` 에서 확인).
+  share.mjs 가 Bearer 헤더로 자동 전송. 미설정이면 401 → 토큰을 export 할 것.
+- 로컬 테스트 시: `LIGHTIFACT_URL=http://localhost:4321`
 - 이 스킬은 `~/.claude/skills/lightifact/` 에 설치되어 있다 (share.mjs 동봉).
 
 ## 절차

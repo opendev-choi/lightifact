@@ -1,7 +1,7 @@
 import { createServer } from 'node:http';
-import { randomUUID, createHash } from 'node:crypto';
+import { randomUUID, randomBytes, scryptSync, timingSafeEqual, createHmac } from 'node:crypto';
 import { readFile, writeFile, readdir, mkdir } from 'node:fs/promises';
-import { existsSync, readFileSync, watchFile } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -9,52 +9,101 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, 'data');
 const PORT = Number(process.env.PORT || 4321);
 const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
+const SECURE = BASE_URL.startsWith('https://');
 
-// 업로드(write) 인증용 Bearer 토큰. codebase-mcp 패턴 재사용:
-//   tokens.json = { "<user-handle>": "<token>", ... }
-//   ExternalSecret 이 1분마다 갱신 → watchFile 로 hot-reload.
-// 파일이 없거나 비어 있으면 인증 비활성(로컬 개발). k8s 에서는 secret 이 항상 마운트됨.
-const TOKENS_FILE = process.env.LIGHTIFACT_TOKENS_FILE || '/etc/lightifact/tokens.json';
-let tokenHashToUser = new Map();
-function loadTokens() {
-  try {
-    const raw = JSON.parse(readFileSync(TOKENS_FILE, 'utf8'));
-    const map = new Map();
-    for (const [user, token] of Object.entries(raw)) {
-      map.set(createHash('sha256').update(token).digest('hex'), user);
-    }
-    tokenHashToUser = map;
-    console.log(`[auth] loaded ${map.size} token(s) from ${TOKENS_FILE}`);
-  } catch {
-    tokenHashToUser = new Map();
-    console.log(`[auth] no tokens at ${TOKENS_FILE} → 업로드 인증 비활성(로컬 개발 모드)`);
-  }
-}
-loadTokens();
-if (existsSync(TOKENS_FILE)) watchFile(TOKENS_FILE, { interval: 30_000 }, loadTokens);
+// 세션 서명 키. 프로덕션에선 env(SESSION_SECRET) 필수. 미설정 시 개발용 고정키.
+const SESSION_SECRET = process.env.SESSION_SECRET || 'dev-insecure-session-secret';
+const SESSION_TTL = 1000 * 60 * 60 * 12; // 12h
 
-// 업로드 요청 인증. 반환: { user } 또는 null(인증 실패). 토큰 미설정 시 'anonymous' 허용.
-function authWrite(req) {
-  if (tokenHashToUser.size === 0) return { user: 'anonymous' };
-  const m = /^Bearer\s+(.+)$/.exec(req.headers.authorization || '');
-  if (!m) return null;
-  // 토큰을 SHA-256 해시해 Map 키로 조회 → raw 토큰 문자열 비교 타이밍 노출 없음.
-  const user = tokenHashToUser.get(createHash('sha256').update(m[1]).digest('hex'));
-  return user ? { user } : null;
-}
+const USERS_FILE = join(DATA_DIR, 'users.json');
+const SETTINGS_FILE = join(DATA_DIR, 'settings.json');
 
 if (!existsSync(DATA_DIR)) await mkdir(DATA_DIR, { recursive: true });
 
-// artifact HTML은 외부 네트워크를 못 쓰게 막는다 (Claude Artifacts와 동일한 철학).
+// ── 저장소 (무DB: PVC의 JSON) ─────────────────────────────────
+function loadJson(file, fallback) {
+  try { return JSON.parse(readFileSync(file, 'utf8')); } catch { return fallback; }
+}
+const saveJson = (file, obj) => writeFileSync(file, JSON.stringify(obj, null, 2), 'utf8');
+
+let users = loadJson(USERS_FILE, {});       // email → { salt, hash, admin, apiToken, sso }
+let settings = loadJson(SETTINGS_FILE, {
+  sso: { enabled: false, clientId: '', clientSecret: '', allowedDomain: '' },
+});
+
+// 부트스트랩 admin: users 가 비어 있고 env 가 있으면 seed.
+if (Object.keys(users).length === 0 && process.env.ADMIN_EMAIL && process.env.ADMIN_PASSWORD) {
+  upsertUser(process.env.ADMIN_EMAIL.toLowerCase(), process.env.ADMIN_PASSWORD, { admin: true });
+  console.log(`[auth] bootstrap admin 생성: ${process.env.ADMIN_EMAIL}`);
+}
+
+// ── 비밀번호 (scrypt, 내장) ───────────────────────────────────
+function hashPassword(pw, salt = randomBytes(16).toString('hex')) {
+  return { salt, hash: scryptSync(pw, salt, 64).toString('hex') };
+}
+function verifyPassword(pw, user) {
+  if (!user?.hash) return false;
+  const h = scryptSync(pw, user.salt, 64).toString('hex');
+  const a = Buffer.from(h), b = Buffer.from(user.hash);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+function upsertUser(email, pw, opts = {}) {
+  const existing = users[email] || {};
+  users[email] = {
+    ...existing,
+    ...(pw ? hashPassword(pw) : {}),
+    admin: opts.admin ?? existing.admin ?? false,
+    apiToken: existing.apiToken || ('lf_' + randomBytes(24).toString('hex')),
+    sso: opts.sso ?? existing.sso ?? false,
+  };
+  saveJson(USERS_FILE, users);
+  return users[email];
+}
+
+// ── 세션 (서명 쿠키, 무상태) ──────────────────────────────────
+const b64u = (s) => Buffer.from(s).toString('base64url');
+const unb64u = (s) => Buffer.from(s, 'base64url').toString('utf8');
+function signSession(email) {
+  const payload = b64u(JSON.stringify({ email, exp: Date.now() + SESSION_TTL }));
+  const sig = createHmac('sha256', SESSION_SECRET).update(payload).digest('base64url');
+  return `${payload}.${sig}`;
+}
+function verifySession(cookie) {
+  if (!cookie) return null;
+  const [payload, sig] = cookie.split('.');
+  if (!payload || !sig) return null;
+  const expect = createHmac('sha256', SESSION_SECRET).update(payload).digest('base64url');
+  const a = Buffer.from(sig), b = Buffer.from(expect);
+  if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
+  try {
+    const { email, exp } = JSON.parse(unb64u(payload));
+    if (Date.now() > exp || !users[email]) return null;
+    return email;
+  } catch { return null; }
+}
+function parseCookies(req) {
+  return Object.fromEntries((req.headers.cookie || '').split(';').map((c) => {
+    const i = c.indexOf('='); return i < 0 ? ['', ''] : [c.slice(0, i).trim(), c.slice(i + 1).trim()];
+  }).filter(([k]) => k));
+}
+function sessionUser(req) { return verifySession(parseCookies(req).lf_session); }
+// 쓰기 인증: 세션(브라우저) 또는 Bearer apiToken(에이전트)
+function writeUser(req) {
+  const s = sessionUser(req);
+  if (s) return s;
+  const m = /^Bearer\s+(.+)$/.exec(req.headers.authorization || '');
+  if (m) return Object.keys(users).find((e) => users[e].apiToken === m[1]) || null;
+  return null;
+}
+function setSessionCookie(res, email) {
+  res.setHeader('Set-Cookie',
+    `lf_session=${signSession(email)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${SESSION_TTL / 1000}${SECURE ? '; Secure' : ''}`);
+}
+
+// ── artifact HTML CSP (외부 네트워크 차단) ────────────────────
 const RAW_CSP = [
-  "default-src 'none'",
-  "script-src 'unsafe-inline' 'unsafe-eval'",
-  "style-src 'unsafe-inline'",
-  "img-src data: blob:",
-  "font-src data:",
-  "media-src data: blob:",
-  "connect-src 'none'",
-  "frame-ancestors 'self'",
+  "default-src 'none'", "script-src 'unsafe-inline' 'unsafe-eval'", "style-src 'unsafe-inline'",
+  "img-src data: blob:", "font-src data:", "media-src data: blob:", "connect-src 'none'", "frame-ancestors 'self'",
 ].join('; ');
 
 const slugPath = (slug) => join(DATA_DIR, `${slug}.html`);
@@ -65,160 +114,253 @@ function send(res, status, body, headers = {}) {
   res.writeHead(status, { 'Cache-Control': 'no-store', ...headers });
   res.end(body);
 }
+const json = (res, status, obj, headers = {}) => send(res, status, JSON.stringify(obj), { 'Content-Type': 'application/json', ...headers });
+const redirect = (res, loc) => send(res, 302, '', { Location: loc });
 
 function readBody(req, limit = 5 * 1024 * 1024) {
   return new Promise((resolve, reject) => {
-    const chunks = [];
-    let size = 0;
-    req.on('data', (c) => {
-      size += c.length;
-      if (size > limit) { reject(new Error('payload too large')); req.destroy(); return; }
-      chunks.push(c);
-    });
+    const chunks = []; let size = 0;
+    req.on('data', (c) => { size += c.length; if (size > limit) { reject(new Error('payload too large')); req.destroy(); return; } chunks.push(c); });
     req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
     req.on('error', reject);
   });
 }
-
-const esc = (s) => String(s).replace(/[&<>"']/g, (c) => (
-  { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
-));
-
-// ---- POST /artifacts : HTML 업로드 → slug/URL 반환 (Bearer 인증) ----
-async function createArtifact(req, res, url) {
-  const auth = authWrite(req);
-  if (!auth) {
-    return send(res, 401, JSON.stringify({ error: 'unauthorized: Bearer 토큰이 필요합니다' }),
-      { 'Content-Type': 'application/json', 'WWW-Authenticate': 'Bearer realm="lightifact"' });
-  }
+async function readForm(req) {
   const raw = await readBody(req);
-  let html = raw;
-  let title = url.searchParams.get('title') || '';
   const ctype = req.headers['content-type'] || '';
+  if (ctype.includes('application/json')) { try { return JSON.parse(raw); } catch { return {}; } }
+  return Object.fromEntries(new URLSearchParams(raw));
+}
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+// ── 인증 라우트 ───────────────────────────────────────────────
+async function apiLogin(req, res) {
+  const { email = '', password = '' } = await readForm(req);
+  const e = email.toLowerCase().trim();
+  if (!verifyPassword(password, users[e])) return json(res, 401, { error: '이메일 또는 비밀번호가 올바르지 않습니다' });
+  setSessionCookie(res, e);
+  json(res, 200, { ok: true, email: e });
+}
+function logout(req, res) {
+  res.setHeader('Set-Cookie', `lf_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0${SECURE ? '; Secure' : ''}`);
+  redirect(res, '/login');
+}
+
+// ── SSO (Google OAuth code flow + userinfo) ───────────────────
+function ssoConfigured() { const s = settings.sso; return s.enabled && s.clientId && s.clientSecret; }
+function ssoStart(req, res) {
+  if (!ssoConfigured()) return redirect(res, '/login');
+  const state = signSession('sso-state');
+  const p = new URLSearchParams({
+    client_id: settings.sso.clientId, redirect_uri: `${BASE_URL}/oauth2/callback`,
+    response_type: 'code', scope: 'openid email profile', state, prompt: 'select_account',
+  });
+  redirect(res, `https://accounts.google.com/o/oauth2/v2/auth?${p}`);
+}
+async function ssoCallback(req, res, url) {
+  if (!ssoConfigured()) return redirect(res, '/login');
+  const code = url.searchParams.get('code');
+  if (!code || verifySession(url.searchParams.get('state')) !== 'sso-state') return send(res, 400, 'invalid oauth state');
+  try {
+    const tok = await (await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        code, client_id: settings.sso.clientId, client_secret: settings.sso.clientSecret,
+        redirect_uri: `${BASE_URL}/oauth2/callback`, grant_type: 'authorization_code',
+      }),
+    })).json();
+    const info = await (await fetch('https://openidconnect.googleapis.com/v1/userinfo', {
+      headers: { Authorization: `Bearer ${tok.access_token}` },
+    })).json();
+    const email = (info.email || '').toLowerCase();
+    const dom = settings.sso.allowedDomain?.trim();
+    if (!email || (dom && !email.endsWith(`@${dom}`))) return send(res, 403, page('접근 거부', `<h1>접근 거부</h1><p>${esc(dom)} 도메인 계정만 로그인할 수 있습니다.</p>`));
+    if (!users[email]) { upsertUser(email, null, { sso: true }); }  // SSO 사용자 자동 생성(비번 없음)
+    setSessionCookie(res, email);
+    redirect(res, '/');
+  } catch (e) { send(res, 502, `SSO 실패: ${esc(e.message)}`); }
+}
+
+// ── 설정(admin) ───────────────────────────────────────────────
+async function apiAddUser(req, res, me) {
+  if (!users[me].admin) return json(res, 403, { error: 'admin only' });
+  const { email = '', password = '', admin } = await readForm(req);
+  const e = email.toLowerCase().trim();
+  if (!e || !password) return json(res, 400, { error: 'email/password 필요' });
+  upsertUser(e, password, { admin: admin === 'on' || admin === true });
+  redirect(res, '/settings');
+}
+async function apiDeleteUser(req, res, me) {
+  if (!users[me].admin) return json(res, 403, { error: 'admin only' });
+  const { email = '' } = await readForm(req);
+  const e = email.toLowerCase().trim();
+  if (e === me) return json(res, 400, { error: '자기 자신은 삭제 불가' });
+  delete users[e]; saveJson(USERS_FILE, users);
+  redirect(res, '/settings');
+}
+async function apiSaveSso(req, res, me) {
+  if (!users[me].admin) return json(res, 403, { error: 'admin only' });
+  const f = await readForm(req);
+  settings.sso = {
+    enabled: f.enabled === 'on' || f.enabled === true,
+    clientId: (f.clientId || '').trim(),
+    clientSecret: (f.clientSecret || settings.sso.clientSecret || '').trim(),
+    allowedDomain: (f.allowedDomain || '').trim(),
+  };
+  saveJson(SETTINGS_FILE, settings);
+  redirect(res, '/settings');
+}
+
+// ── artifact 생성/조회 ────────────────────────────────────────
+async function createArtifact(req, res, url) {
+  const owner = writeUser(req);
+  if (!owner) return json(res, 401, { error: 'unauthorized: 로그인 또는 API 토큰 필요' }, { 'WWW-Authenticate': 'Bearer realm="lightifact"' });
+  const raw = await readBody(req);
+  const ctype = req.headers['content-type'] || '';
+  let html, title = url.searchParams.get('title') || '';
   if (ctype.includes('application/json')) {
-    try {
-      const j = JSON.parse(raw);
-      html = j.html ?? '';
-      title = j.title ?? title;
-    } catch { return send(res, 400, JSON.stringify({ error: 'invalid json' }), { 'Content-Type': 'application/json' }); }
+    try { const j = JSON.parse(raw); html = j.html; title = j.title ?? title; }
+    catch { return json(res, 400, { error: 'invalid json' }); }
+  } else if (ctype.includes('application/x-www-form-urlencoded')) {
+    const f = Object.fromEntries(new URLSearchParams(raw)); html = f.html; title = f.title ?? title;
+  } else {
+    html = raw; // raw HTML 본문 (curl --data-binary)
   }
-  if (!html || !html.trim()) {
-    return send(res, 400, JSON.stringify({ error: 'html body is empty' }), { 'Content-Type': 'application/json' });
-  }
+  if (!html || !String(html).trim()) return json(res, 400, { error: 'html body is empty' });
   const slug = randomUUID();
   await writeFile(slugPath(slug), html, 'utf8');
-  await writeFile(metaPath(slug), JSON.stringify({
-    slug, title: title || 'Untitled artifact', bytes: Buffer.byteLength(html), owner: auth.user,
-  }), 'utf8');
-  const shareUrl = `${BASE_URL}/a/${slug}`;
-  send(res, 201, JSON.stringify({ slug, url: shareUrl, owner: auth.user }), { 'Content-Type': 'application/json' });
+  await writeFile(metaPath(slug), JSON.stringify({ slug, title: title || 'Untitled artifact', bytes: Buffer.byteLength(html), owner }), 'utf8');
+  json(res, 201, { slug, url: `${BASE_URL}/a/${slug}`, owner });
 }
-
-// ---- GET /raw/:slug : CSP 걸린 원본 HTML (iframe 안에서만 로드됨) ----
 async function serveRaw(req, res, slug) {
   if (!isValidSlug(slug) || !existsSync(slugPath(slug))) return send(res, 404, 'not found');
-  const html = await readFile(slugPath(slug), 'utf8');
-  send(res, 200, html, { 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': RAW_CSP });
+  send(res, 200, await readFile(slugPath(slug), 'utf8'), { 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': RAW_CSP });
 }
-
-// ---- GET /a/:slug : sandboxed iframe 뷰어 ----
 async function serveViewer(req, res, slug) {
-  if (!isValidSlug(slug) || !existsSync(metaPath(slug))) return send(res, 404, page('Not found', '<h1>404</h1><p>해당 artifact를 찾을 수 없습니다.</p>'));
+  if (!isValidSlug(slug) || !existsSync(metaPath(slug))) return send(res, 404, page('Not found', '<h1>404</h1>'));
   const meta = JSON.parse(await readFile(metaPath(slug), 'utf8'));
-  const body = `
-    <header>
-      <a href="/" class="back">← 목록</a>
-      <span class="title">${esc(meta.title)}</span>
-      <a href="/raw/${slug}" target="_blank" class="open">새 탭에서 열기 ↗</a>
-    </header>
+  const body = `<header><a href="/" class="back">← 목록</a><span class="title">${esc(meta.title)}</span>
+    <span class="who">${esc(meta.owner || '')}</span><a href="/raw/${slug}" target="_blank" class="open">새 탭 ↗</a></header>
     <iframe src="/raw/${slug}" sandbox="allow-scripts allow-popups allow-forms" title="${esc(meta.title)}"></iframe>`;
-  send(res, 200, page(meta.title, body, true), { 'Content-Type': 'text/html; charset=utf-8' });
+  send(res, 200, page(meta.title, body, 'viewer'), { 'Content-Type': 'text/html; charset=utf-8' });
 }
-
-// ---- GET / : 목록 + 업로드 폼 ----
-async function serveIndex(req, res) {
-  const files = (await readdir(DATA_DIR)).filter((f) => f.endsWith('.json'));
+async function serveIndex(req, res, me) {
+  const files = (await readdir(DATA_DIR)).filter((f) => f.endsWith('.json') && !['users.json', 'settings.json'].includes(f));
   const items = [];
-  for (const f of files) {
-    try { items.push(JSON.parse(await readFile(join(DATA_DIR, f), 'utf8'))); } catch {}
-  }
+  for (const f of files) { try { items.push(JSON.parse(await readFile(join(DATA_DIR, f), 'utf8'))); } catch {} }
   const list = items.length
-    ? items.map((m) => `<li><a href="/a/${m.slug}">${esc(m.title)}</a> <code>${m.slug.slice(0, 8)}</code></li>`).join('')
+    ? items.map((m) => `<li><a href="/a/${m.slug}">${esc(m.title)}</a> <code>${m.slug.slice(0, 8)}</code> <span class="who">${esc(m.owner || '')}</span></li>`).join('')
     : '<li class="empty">아직 artifact가 없습니다.</li>';
-  const body = `
-    <h1>🧩 lightifact</h1>
-    <form id="up">
-      <input name="title" placeholder="제목 (선택)" />
-      <textarea name="html" placeholder="여기에 HTML 붙여넣기..." required></textarea>
-      <button type="submit">공유 링크 생성</button>
-    </form>
-    <div id="result"></div>
-    <h2>목록</h2>
-    <ul class="list">${list}</ul>
-    <script>
-      const f = document.getElementById('up');
-      f.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const r = await fetch('/artifacts', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title: f.title.value, html: f.html.value }),
-        });
-        const j = await r.json();
-        if (j.url) {
-          document.getElementById('result').innerHTML =
-            '생성됨: <a href="' + j.url + '">' + j.url + '</a>';
-          setTimeout(() => location.reload(), 800);
-        } else {
-          document.getElementById('result').textContent = '에러: ' + (j.error || 'unknown');
-        }
-      });
-    </script>`;
-  send(res, 200, page('lightifact', body), { 'Content-Type': 'text/html; charset=utf-8' });
+  const admin = users[me]?.admin;
+  const body = `<header class="bar"><b>🧩 lightifact</b><span class="sp"></span>
+    <span class="who">${esc(me)}</span>${admin ? '<a href="/settings">설정</a>' : ''}<a href="/logout">로그아웃</a></header>
+    <div class="wrap"><form id="up"><input name="title" placeholder="제목 (선택)"/>
+    <textarea name="html" placeholder="self-contained HTML 붙여넣기..." required></textarea>
+    <button>공유 링크 생성</button></form><div id="result"></div>
+    <h2>목록</h2><ul class="list">${list}</ul></div>
+    <script>document.getElementById('up').addEventListener('submit',async(e)=>{e.preventDefault();const f=e.target;
+    const r=await fetch('/artifacts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:f.title.value,html:f.html.value})});
+    const j=await r.json();document.getElementById('result').innerHTML=j.url?('생성됨: <a href="'+j.url+'">'+j.url+'</a>'):('에러: '+(j.error||''));
+    if(j.url)setTimeout(()=>location.reload(),800);});</script>`;
+  send(res, 200, page('lightifact', body, 'app'), { 'Content-Type': 'text/html; charset=utf-8' });
+}
+function serveSettings(req, res, me) {
+  if (!users[me].admin) return send(res, 403, page('접근 거부', '<div class="wrap"><h1>403</h1><p>관리자만 접근 가능</p></div>', 'app'));
+  const rows = Object.entries(users).map(([e, u]) => `<tr><td>${esc(e)}</td>
+    <td>${u.admin ? '✔' : ''}</td><td>${u.sso ? 'SSO' : 'pw'}</td>
+    <td><code>${esc(u.apiToken)}</code></td>
+    <td><form method="post" action="/api/users/delete" onsubmit="return confirm('삭제?')">
+    <input type="hidden" name="email" value="${esc(e)}"><button ${e === me ? 'disabled' : ''}>삭제</button></form></td></tr>`).join('');
+  const s = settings.sso;
+  const body = `<header class="bar"><a href="/">← lightifact</a><span class="sp"></span><span class="who">${esc(me)}</span><a href="/logout">로그아웃</a></header>
+    <div class="wrap"><h2>사용자</h2>
+    <table><tr><th>이메일</th><th>admin</th><th>방식</th><th>API 토큰 (에이전트 업로드용)</th><th></th></tr>${rows}</table>
+    <h3>사용자 추가</h3>
+    <form method="post" action="/api/users" class="row">
+      <input name="email" placeholder="email" required><input name="password" type="password" placeholder="password" required>
+      <label><input type="checkbox" name="admin"> admin</label><button>추가</button></form>
+    <h2>SSO (Google)</h2>
+    <form method="post" action="/api/settings/sso">
+      <label><input type="checkbox" name="enabled" ${s.enabled ? 'checked' : ''}> SSO 활성화 (로그인 화면에 Google 버튼)</label>
+      <input name="clientId" placeholder="Google Client ID" value="${esc(s.clientId)}">
+      <input name="clientSecret" type="password" placeholder="Google Client Secret ${s.clientSecret ? '(설정됨 — 변경 시 입력)' : ''}">
+      <input name="allowedDomain" placeholder="허용 도메인 (예: cardoc.kr, 비우면 전체)" value="${esc(s.allowedDomain)}">
+      <button>저장</button></form>
+    <p class="hint">리디렉션 URI: <code>${esc(BASE_URL)}/oauth2/callback</code> 를 Google 콘솔에 등록하세요.</p>
+    </div>`;
+  send(res, 200, page('설정', body, 'app'), { 'Content-Type': 'text/html; charset=utf-8' });
+}
+function serveLogin(req, res) {
+  const sso = ssoConfigured();
+  const body = `<div class="login"><h1>🧩 lightifact</h1>
+    <form id="lf"><input name="email" type="email" placeholder="이메일" required autofocus>
+    <input name="password" type="password" placeholder="비밀번호" required><button>로그인</button>
+    <div id="err"></div></form>
+    ${sso ? '<div class="or">또는</div><a class="google" href="/oauth2/start">Google로 로그인</a>' : ''}</div>
+    <script>document.getElementById('lf').addEventListener('submit',async(e)=>{e.preventDefault();const f=e.target;
+    const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:f.email.value,password:f.password.value})});
+    if(r.ok)location.href='/';else{const j=await r.json();document.getElementById('err').textContent=j.error||'로그인 실패';}});</script>`;
+  send(res, 200, page('로그인', body, 'login'), { 'Content-Type': 'text/html; charset=utf-8' });
 }
 
-function page(title, body, viewer = false) {
-  return `<!doctype html><html lang="ko"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${esc(title)}</title>
-<style>
-  :root { color-scheme: light dark; }
-  * { box-sizing: border-box; }
-  body { margin: 0; font: 15px/1.5 -apple-system, system-ui, sans-serif; }
-  ${viewer ? `
-  body { display: flex; flex-direction: column; height: 100vh; }
-  header { display: flex; align-items: center; gap: 16px; padding: 10px 16px; border-bottom: 1px solid #8883; }
-  header .title { font-weight: 600; flex: 1; }
-  header a { color: #4571ff; text-decoration: none; font-size: 13px; }
-  iframe { flex: 1; width: 100%; border: 0; }
-  ` : `
-  body { max-width: 760px; margin: 0 auto; padding: 32px 20px; }
-  h1 { font-size: 24px; } h2 { font-size: 16px; margin-top: 32px; }
-  form { display: flex; flex-direction: column; gap: 8px; }
-  input, textarea { padding: 10px; border: 1px solid #8886; border-radius: 8px; background: transparent; color: inherit; font: inherit; }
-  textarea { min-height: 160px; font-family: ui-monospace, monospace; }
-  button { padding: 10px; border: 0; border-radius: 8px; background: #4571ff; color: #fff; font-weight: 600; cursor: pointer; }
-  #result { margin: 12px 0; font-size: 14px; }
-  .list { list-style: none; padding: 0; } .list li { padding: 8px 0; border-bottom: 1px solid #8882; }
-  .list code { color: #888; font-size: 12px; } .empty { color: #888; }
-  a { color: #4571ff; }
-  `}
-</style></head><body>${body}</body></html>`;
+function page(title, body, mode = 'app') {
+  const css = {
+    login: `body{display:grid;place-items:center;min-height:100vh;margin:0} .login{width:300px;text-align:center}
+      .login h1{font-size:22px} form{display:flex;flex-direction:column;gap:8px} .or{color:#888;margin:14px 0;font-size:13px}
+      .google{display:block;padding:10px;border:1px solid #8886;border-radius:8px;text-decoration:none;color:inherit}
+      #err{color:#e5484d;font-size:13px;min-height:16px}`,
+    viewer: `body{display:flex;flex-direction:column;height:100vh;margin:0}
+      header{display:flex;align-items:center;gap:14px;padding:10px 16px;border-bottom:1px solid #8883}
+      header .title{font-weight:600;flex:1} header a{color:#4571ff;text-decoration:none;font-size:13px} iframe{flex:1;border:0}`,
+    app: `.bar{display:flex;align-items:center;gap:14px;padding:10px 16px;border-bottom:1px solid #8883}
+      .bar .sp{flex:1} .bar a{color:#4571ff;text-decoration:none;font-size:13px} .who{color:#888;font-size:12px}
+      .wrap{max-width:820px;margin:0 auto;padding:24px 20px} h2{font-size:16px;margin-top:28px}
+      form{display:flex;flex-direction:column;gap:8px} .row{flex-direction:row;flex-wrap:wrap;align-items:center}
+      input,textarea{padding:9px;border:1px solid #8886;border-radius:8px;background:transparent;color:inherit;font:inherit}
+      textarea{min-height:150px;font-family:ui-monospace,monospace} button{padding:9px 14px;border:0;border-radius:8px;background:#4571ff;color:#fff;font-weight:600;cursor:pointer}
+      table{width:100%;border-collapse:collapse;font-size:13px} th,td{text-align:left;padding:7px 8px;border-bottom:1px solid #8882} code{font-size:11px;color:#888}
+      .list{list-style:none;padding:0} .list li{padding:8px 0;border-bottom:1px solid #8882} .empty{color:#888}
+      #result{margin:10px 0;font-size:14px} .hint{color:#888;font-size:12px} a{color:#4571ff}`,
+  }[mode] || '';
+  return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>${esc(title)}</title><style>:root{color-scheme:light dark}*{box-sizing:border-box}
+    body{font:15px/1.5 -apple-system,system-ui,sans-serif}${css}</style></head><body>${body}</body></html>`;
 }
 
+// ── 라우터 ────────────────────────────────────────────────────
+const OPEN = new Set(['/healthz', '/login', '/api/login', '/oauth2/start', '/oauth2/callback']);
 const server = createServer(async (req, res) => {
   try {
     const url = new URL(req.url, BASE_URL);
-    const path = url.pathname;
-    if (req.method === 'GET' && path === '/healthz') return send(res, 200, 'ok', { 'Content-Type': 'text/plain' });
-    if (req.method === 'POST' && path === '/artifacts') return await createArtifact(req, res, url);
-    if (req.method === 'GET' && path === '/') return await serveIndex(req, res);
+    const path = url.pathname, method = req.method;
+
+    if (method === 'GET' && path === '/healthz') return send(res, 200, 'ok', { 'Content-Type': 'text/plain' });
+    if (method === 'GET' && path === '/login') return serveLogin(req, res);
+    if (method === 'POST' && path === '/api/login') return await apiLogin(req, res);
+    if (method === 'GET' && path === '/oauth2/start') return ssoStart(req, res);
+    if (method === 'GET' && path === '/oauth2/callback') return await ssoCallback(req, res, url);
+    if (method === 'GET' && path === '/logout') return logout(req, res);
+
+    // POST /artifacts: 세션 또는 Bearer 토큰 (writeUser 내부 처리)
+    if (method === 'POST' && path === '/artifacts') return await createArtifact(req, res, url);
+
+    // 그 외 전부 세션 로그인 필요
+    const me = sessionUser(req);
+    if (!me) {
+      if (path.startsWith('/api/') || method !== 'GET') return json(res, 401, { error: 'login required' });
+      return redirect(res, '/login');
+    }
+    if (method === 'GET' && path === '/') return await serveIndex(req, res, me);
+    if (method === 'GET' && path === '/settings') return serveSettings(req, res, me);
+    if (method === 'POST' && path === '/api/users') return await apiAddUser(req, res, me);
+    if (method === 'POST' && path === '/api/users/delete') return await apiDeleteUser(req, res, me);
+    if (method === 'POST' && path === '/api/settings/sso') return await apiSaveSso(req, res, me);
     let m;
-    if (req.method === 'GET' && (m = path.match(/^\/raw\/([^/]+)$/))) return await serveRaw(req, res, m[1]);
-    if (req.method === 'GET' && (m = path.match(/^\/a\/([^/]+)$/))) return await serveViewer(req, res, m[1]);
+    if (method === 'GET' && (m = path.match(/^\/raw\/([^/]+)$/))) return await serveRaw(req, res, m[1]);
+    if (method === 'GET' && (m = path.match(/^\/a\/([^/]+)$/))) return await serveViewer(req, res, m[1]);
     send(res, 404, 'not found');
   } catch (err) {
-    send(res, 500, JSON.stringify({ error: String(err.message || err) }), { 'Content-Type': 'application/json' });
+    json(res, 500, { error: String(err.message || err) });
   }
 });
-
-server.listen(PORT, () => console.log(`🧩 lightifact → ${BASE_URL}`));
+server.listen(PORT, () => console.log(`🧩 lightifact → ${BASE_URL}${SECURE ? '' : '  (insecure/dev)'}`));

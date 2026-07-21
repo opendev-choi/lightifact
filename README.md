@@ -3,20 +3,26 @@
 DB·인증 없이 HTML artifact를 올리고 **sandboxed iframe**으로 공유하는 초경량 서비스.
 의존성 0개 (Node 내장 모듈만 사용).
 
-## 실행
+## 실행 (로컬)
 ```bash
-node server.mjs          # http://localhost:4321
-PORT=8080 node server.mjs # 포트 변경
-BASE_URL=https://artifacts.example.com node server.mjs # 공개 URL 지정
+SESSION_SECRET=dev ADMIN_EMAIL=me@cardoc.kr ADMIN_PASSWORD=pw node server.mjs
+# http://localhost:4321 → 로그인(위 admin) → 사용 / /settings 에서 사용자·SSO 관리
 ```
 
+## 인증
+- **읽기·쓰기 전부 로그인 필요.** email+password (또는 설정 시 Google SSO).
+- 최초 admin 은 `ADMIN_EMAIL`/`ADMIN_PASSWORD` env 로 seed, 이후 `/settings` 에서 관리.
+- 에이전트 업로드는 사용자별 **API 토큰**(Bearer, `/settings` 에서 확인).
+- 세션은 서명 쿠키(HMAC, 무상태), 비밀번호는 scrypt. 저장은 PVC의 `users.json`/`settings.json`.
+
 ## 사용
-- 웹: `http://localhost:4321` 접속 → HTML 붙여넣고 "공유 링크 생성"
-- API:
+- 웹: 로그인 → HTML 붙여넣고 "공유 링크 생성"
+- API(업로드):
   ```bash
   curl -X POST "http://localhost:4321/artifacts?title=제목" \
+    -H "Authorization: Bearer <API토큰>" \
     -H "Content-Type: text/html" --data-binary @page.html
-  # → { "slug": "...", "url": "http://localhost:4321/a/..." }
+  # → { "slug": "...", "url": ".../a/...", "owner": "..." }
   ```
 
 ## 엔드포인트
@@ -46,6 +52,6 @@ bash .claude/skills/lightifact/install.sh   # → ~/.claude/skills/lightifact/
   (Claude Artifacts와 동일한 철학). self-contained HTML만 정상 동작.
 
 ## 알아둘 것
-- 인증 없음 → 링크 아는 사람은 누구나 열람. 민감 정보 금지.
+- 읽기·쓰기 전부 로그인 필요(세션). 그래도 사내망 유지 권장, 외부 노출 금지.
 - 완전한 origin 격리를 원하면 `/raw`를 **별도 서브도메인**으로 서빙할 것.
 - Claude Code 스킬: `.claude/skills/lightifact` (`/lightifact`로 호출)
