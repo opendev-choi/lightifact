@@ -73,16 +73,20 @@ export class ViewService {
           return `<li><a href="/a/${esc(m.slug)}">${esc(m.title)}</a> <code>${esc(m.slug.slice(0, 8))}</code> <span class="who">${esc(m.owner)}</span>${del}</li>`;
         }).join('')
       : '<li class="empty">아직 artifact가 없습니다.</li>';
-    const setupCmd = `D=~/.claude/skills/lightifact; mkdir -p "$D"; for f in SKILL.md share.mjs; do curl -fsSL "https://raw.githubusercontent.com/opendev-choi/lightifact/main/.claude/skills/lightifact/$f" -o "$D/$f"; done; grep -q LIGHTIFACT_TOKEN ~/.zshrc || echo 'export LIGHTIFACT_TOKEN=${token}' >> ~/.zshrc; export LIGHTIFACT_TOKEN=${token}; echo '✅ lightifact 스킬+토큰 설정 완료 (새 터미널부터 적용)'`;
+    const aiPrompt = `lightifact 스킬을 설치하고 첫 아티팩트를 공유해줘.
+
+1. https://github.com/opendev-choi/lightifact 의 .claude/skills/lightifact/ 에서 SKILL.md, share.mjs 를 받아 ~/.claude/skills/lightifact/ 에 넣어줘.
+2. ~/.zshrc 에 export LIGHTIFACT_TOKEN=${token} 를 추가해줘.
+3. "Hello, lightifact 🎉" 를 크게 보여주는 self-contained HTML 데모를 하나 만들어서, LIGHTIFACT_URL=https://lightifact.cardoc.kr 로 lightifact 에 공유하고 링크를 알려줘.`;
     const body = `${this.bar(me, admin)}<div class="wrap">
-      <details class="setup"><summary>⚙️ Claude Code 스킬 설치 + 토큰 설정 — 한 줄</summary>
-        <p class="hint">아래를 터미널에 붙여넣기. 스킬 설치 + 본인 토큰(<code>${esc(me)}</code>) 등록까지 한 번에.</p>
-        <pre id="cmd">${esc(setupCmd)}</pre>
-        <button class="copy" onclick="navigator.clipboard.writeText(document.getElementById('cmd').textContent).then(()=>{this.textContent='복사됨 ✓'})">복사</button>
-      </details>
       <h2>공유된 artifact</h2>
-      <p class="hint">업로드는 스킬 <code>/lightifact</code> 또는 API 토큰(Bearer)으로.</p>
-      <ul class="list">${list}</ul></div>`;
+      <p class="hint">업로드는 Claude Code 스킬 <code>/lightifact</code> 또는 API 토큰(Bearer)으로.</p>
+      <ul class="list">${list}</ul>
+      <details class="setup" open><summary>🚀 처음이세요? — Claude Code에 이 프롬프트를 붙여넣으세요</summary>
+        <p class="hint">스킬 설치 → 토큰 설정(<code>${esc(me)}</code>) → 데모 아티팩트 생성·공유까지 한 번에 실행됩니다.</p>
+        <pre id="prompt">${esc(aiPrompt)}</pre>
+        <button class="copy" onclick="navigator.clipboard.writeText(document.getElementById('prompt').textContent).then(()=>{this.textContent='프롬프트 복사됨 ✓'})">프롬프트 복사</button>
+      </details></div>`;
     return this.layout('lightifact', body, 'app');
   }
 
