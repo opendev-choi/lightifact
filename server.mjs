@@ -1,7 +1,7 @@
 import { createServer } from 'node:http';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import { readFile, writeFile, readdir, mkdir } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync, watchFile } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -9,6 +9,39 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, 'data');
 const PORT = Number(process.env.PORT || 4321);
 const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
+
+// 업로드(write) 인증용 Bearer 토큰. codebase-mcp 패턴 재사용:
+//   tokens.json = { "<user-handle>": "<token>", ... }
+//   ExternalSecret 이 1분마다 갱신 → watchFile 로 hot-reload.
+// 파일이 없거나 비어 있으면 인증 비활성(로컬 개발). k8s 에서는 secret 이 항상 마운트됨.
+const TOKENS_FILE = process.env.LIGHTIFACT_TOKENS_FILE || '/etc/lightifact/tokens.json';
+let tokenHashToUser = new Map();
+function loadTokens() {
+  try {
+    const raw = JSON.parse(readFileSync(TOKENS_FILE, 'utf8'));
+    const map = new Map();
+    for (const [user, token] of Object.entries(raw)) {
+      map.set(createHash('sha256').update(token).digest('hex'), user);
+    }
+    tokenHashToUser = map;
+    console.log(`[auth] loaded ${map.size} token(s) from ${TOKENS_FILE}`);
+  } catch {
+    tokenHashToUser = new Map();
+    console.log(`[auth] no tokens at ${TOKENS_FILE} → 업로드 인증 비활성(로컬 개발 모드)`);
+  }
+}
+loadTokens();
+if (existsSync(TOKENS_FILE)) watchFile(TOKENS_FILE, { interval: 30_000 }, loadTokens);
+
+// 업로드 요청 인증. 반환: { user } 또는 null(인증 실패). 토큰 미설정 시 'anonymous' 허용.
+function authWrite(req) {
+  if (tokenHashToUser.size === 0) return { user: 'anonymous' };
+  const m = /^Bearer\s+(.+)$/.exec(req.headers.authorization || '');
+  if (!m) return null;
+  // 토큰을 SHA-256 해시해 Map 키로 조회 → raw 토큰 문자열 비교 타이밍 노출 없음.
+  const user = tokenHashToUser.get(createHash('sha256').update(m[1]).digest('hex'));
+  return user ? { user } : null;
+}
 
 if (!existsSync(DATA_DIR)) await mkdir(DATA_DIR, { recursive: true });
 
@@ -51,8 +84,13 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (c) => (
   { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
 ));
 
-// ---- POST /artifacts : HTML 업로드 → slug/URL 반환 ----
+// ---- POST /artifacts : HTML 업로드 → slug/URL 반환 (Bearer 인증) ----
 async function createArtifact(req, res, url) {
+  const auth = authWrite(req);
+  if (!auth) {
+    return send(res, 401, JSON.stringify({ error: 'unauthorized: Bearer 토큰이 필요합니다' }),
+      { 'Content-Type': 'application/json', 'WWW-Authenticate': 'Bearer realm="lightifact"' });
+  }
   const raw = await readBody(req);
   let html = raw;
   let title = url.searchParams.get('title') || '';
@@ -70,10 +108,10 @@ async function createArtifact(req, res, url) {
   const slug = randomUUID();
   await writeFile(slugPath(slug), html, 'utf8');
   await writeFile(metaPath(slug), JSON.stringify({
-    slug, title: title || 'Untitled artifact', bytes: Buffer.byteLength(html),
+    slug, title: title || 'Untitled artifact', bytes: Buffer.byteLength(html), owner: auth.user,
   }), 'utf8');
   const shareUrl = `${BASE_URL}/a/${slug}`;
-  send(res, 201, JSON.stringify({ slug, url: shareUrl }), { 'Content-Type': 'application/json' });
+  send(res, 201, JSON.stringify({ slug, url: shareUrl, owner: auth.user }), { 'Content-Type': 'application/json' });
 }
 
 // ---- GET /raw/:slug : CSP 걸린 원본 HTML (iframe 안에서만 로드됨) ----
