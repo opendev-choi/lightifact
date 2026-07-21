@@ -25,8 +25,8 @@ export class ViewService {
   // ── 로그인 / 셋업 / 초대 ──
   login(ssoOn: boolean): string {
     const body = `<div class="card"><h1>🧩 lightifact</h1>
-      <form id="lf"><input name="email" type="email" placeholder="이메일" required autofocus>
-      <input name="password" type="password" placeholder="비밀번호" required><button>로그인</button>
+      <form id="lf"><input name="email" type="email" placeholder="이메일" autocomplete="username" required autofocus>
+      <input name="password" type="password" placeholder="비밀번호" autocomplete="current-password" required><button>로그인</button>
       <div class="err" id="err"></div></form>
       ${ssoOn ? '<div class="or">또는</div><a class="ghost" href="/oauth2/start">Google로 로그인</a>' : ''}</div>
       ${submitScript('lf', '/api/login', '/')}`;
@@ -36,8 +36,8 @@ export class ViewService {
   setup(): string {
     const body = `<div class="card"><h1>🧩 lightifact 시작 설정</h1>
       <p class="hint">첫 관리자 계정을 만드세요.</p>
-      <form id="lf"><input name="email" type="email" placeholder="관리자 이메일" required autofocus>
-      <input name="password" type="password" placeholder="비밀번호 (8자 이상)" minlength="8" required>
+      <form id="lf"><input name="email" type="email" placeholder="관리자 이메일" autocomplete="username" required autofocus>
+      <input name="password" type="password" placeholder="비밀번호 (8자 이상)" autocomplete="new-password" minlength="8" required>
       <button>관리자 생성</button><div class="err" id="err"></div></form>
       ${submitScript('lf', '/api/setup', '/settings')}`;
     return this.layout('시작 설정', body, 'login');
@@ -46,7 +46,7 @@ export class ViewService {
   invite(token: string, email: string): string {
     const body = `<div class="card"><h1>🧩 lightifact 가입</h1><p class="hint">${esc(email)}</p>
       <form id="lf"><input type="hidden" name="token" value="${esc(token)}">
-      <input name="password" type="password" placeholder="비밀번호 설정 (8자 이상)" minlength="8" required autofocus>
+      <input name="password" type="password" placeholder="비밀번호 설정 (8자 이상)" autocomplete="new-password" minlength="8" required autofocus>
       <button>가입 완료</button><div class="err" id="err"></div></form>
       ${submitScript('lf', '/api/invite/accept', '/')}`;
     return this.layout('가입', body, 'login');
@@ -116,6 +116,7 @@ export class ViewService {
       <input name="clientId" placeholder="Google Client ID" value="${esc(sso.clientId)}">
       <input name="clientSecret" type="password" placeholder="Google Client Secret ${sso.clientSecret ? '(설정됨 — 변경 시 입력)' : ''}">
       <input name="allowedDomain" placeholder="허용 도메인 (예: cardoc.kr, 비우면 전체)" value="${esc(sso.allowedDomain)}">
+      <label><input type="checkbox" name="autoJoin" ${sso.autoJoin ? 'checked' : ''}> 허용 도메인 계정 <b>자동 가입</b> (끄면 초대/기존 사용자만 로그인)</label>
       <button>저장</button></form>
       <p class="hint">리디렉션 URI: <code>${esc(this.baseUrl)}/oauth2/callback</code> 를 Google 콘솔에 등록하세요.</p></div>`;
     return this.layout('설정', body, 'app');
@@ -134,7 +135,9 @@ a{color:#4571ff} code{font-size:12px;color:#888} .who{color:#888;font-size:12px}
 .tag{font-size:11px;padding:1px 8px;border-radius:999px;background:#4571ff22;color:#4571ff}`;
 
 const MODE_CSS: Record<Mode, string> = {
-  login: `body{display:grid;place-items:center;min-height:100vh}.card{width:300px;text-align:center}
+  login: `html{scrollbar-gutter:stable}
+    body{display:flex;align-items:center;justify-content:center;min-height:100vh;min-height:100dvh;padding:24px}
+    .card{width:300px;max-width:100%;text-align:center}
     .card h1{font-size:22px}form{display:flex;flex-direction:column;gap:8px}
     input{padding:10px;border:1px solid #8886;border-radius:8px;background:transparent;color:inherit;font:inherit}
     button{padding:10px;border:0;border-radius:8px;background:#4571ff;color:#fff;font-weight:600;cursor:pointer}

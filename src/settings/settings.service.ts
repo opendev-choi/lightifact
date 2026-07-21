@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { DbService } from '../db/db.service';
 import { SsoSettings } from '../common/types';
 
-const DEFAULT_SSO: SsoSettings = { enabled: false, clientId: '', clientSecret: '', allowedDomain: '' };
+const DEFAULT_SSO: SsoSettings = { enabled: false, clientId: '', clientSecret: '', allowedDomain: '', autoJoin: false };
 
 @Injectable()
 export class SettingsService {
@@ -41,6 +41,7 @@ export class SettingsService {
       // clientSecret 빈 값이면 기존 유지 (마스킹 폼 대응)
       clientSecret: (patch.clientSecret || current.clientSecret || '').trim(),
       allowedDomain: (patch.allowedDomain ?? '').trim(),
+      autoJoin: patch.autoJoin ?? false,
     };
     this.write('sso', next);
   }

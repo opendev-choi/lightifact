@@ -34,7 +34,16 @@ export class SsoController {
     }
     try {
       const email = await this.sso.exchange(code, state);
-      if (!this.users.get(email)) this.users.upsert(email, null, { sso: true });
+      if (!this.users.get(email)) {
+        if (!this.settings.sso.autoJoin) {
+          res
+            .status(403)
+            .type('text/html')
+            .send(this.view.message('가입 필요', '가입되지 않은 계정', '자동 가입이 꺼져 있습니다. 관리자에게 초대를 요청하세요.'));
+          return;
+        }
+        this.users.upsert(email, null, { sso: true }); // 허용 도메인 자동 가입
+      }
       res.setHeader('Set-Cookie', this.session.cookieHeader(this.session.create(email)));
       res.redirect('/');
     } catch (e) {
@@ -48,7 +57,7 @@ export class SsoController {
   @Post('api/settings/sso')
   @UseGuards(SessionGuard, AdminGuard)
   saveSso(
-    @Body() body: { enabled?: string; clientId?: string; clientSecret?: string; allowedDomain?: string },
+    @Body() body: { enabled?: string; clientId?: string; clientSecret?: string; allowedDomain?: string; autoJoin?: string },
     @Res() res: Response,
   ): void {
     this.settings.updateSso({
@@ -56,6 +65,7 @@ export class SsoController {
       clientId: body.clientId,
       clientSecret: body.clientSecret,
       allowedDomain: body.allowedDomain,
+      autoJoin: body.autoJoin === 'on',
     });
     res.redirect('/settings');
   }

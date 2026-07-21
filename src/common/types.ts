@@ -16,6 +16,8 @@ export interface SsoSettings {
   clientId: string;
   clientSecret: string;
   allowedDomain: string;
+  // 허용 도메인 계정을 SSO 로그인 시 즉시 자동 가입시킬지. off 면 기존/초대 사용자만 로그인 가능.
+  autoJoin: boolean;
 }
 
 export interface Settings {
