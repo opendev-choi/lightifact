@@ -23,13 +23,14 @@ export class ViewService {
   }
 
   // ── 로그인 / 셋업 / 초대 ──
-  login(ssoOn: boolean): string {
+  login(ssoOn: boolean, next = '/'): string {
+    const ssoHref = `/oauth2/start?next=${encodeURIComponent(next)}`;
     const body = `<div class="card"><h1>🧩 lightifact</h1>
       <form id="lf"><input name="email" type="email" placeholder="이메일" autocomplete="username" required autofocus>
       <input name="password" type="password" placeholder="비밀번호" autocomplete="current-password" required><button>로그인</button>
       <div class="err" id="err"></div></form>
-      ${ssoOn ? '<div class="or">또는</div><a class="ghost" href="/oauth2/start">Google로 로그인</a>' : ''}</div>
-      ${submitScript('lf', '/api/login', '/')}`;
+      ${ssoOn ? `<div class="or">또는</div><a class="ghost" href="${esc(ssoHref)}">Google로 로그인</a>` : ''}</div>
+      ${submitScript('lf', '/api/login', next)}`;
     return this.layout('로그인', body, 'login');
   }
 
@@ -125,8 +126,8 @@ export class ViewService {
 
 function submitScript(formId: string, action: string, onOk: string): string {
   return `<script>document.getElementById('${formId}').addEventListener('submit',async(e)=>{e.preventDefault();const f=e.target;const b={};new FormData(f).forEach((v,k)=>b[k]=v);
-    const r=await fetch('${action}',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
-    if(r.ok)location.href='${onOk}';else{const j=await r.json().catch(()=>({}));document.getElementById('err').textContent=(j.message||j.error||'실패');}});</script>`;
+    const r=await fetch(${JSON.stringify(action)},{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
+    if(r.ok)location.href=${JSON.stringify(onOk)};else{const j=await r.json().catch(()=>({}));document.getElementById('err').textContent=(j.message||j.error||'실패');}});</script>`;
 }
 
 const BASE_CSS = `:root{color-scheme:light dark}*{box-sizing:border-box}

@@ -45,22 +45,22 @@ export class SessionService {
     if (token) this.db.db.prepare('DELETE FROM sessions WHERE token = ?').run(token);
   }
 
-  // ── OAuth state (CSRF 방지, 단명) ──
-  createOauthState(): string {
+  // ── OAuth state (CSRF 방지, 단명) + 로그인 후 복귀 경로(next) ──
+  createOauthState(next = '/'): string {
     const state = randomBytes(24).toString('hex');
     this.db.db
-      .prepare('INSERT INTO oauth_states (state, exp) VALUES (?, ?)')
-      .run(state, Date.now() + OAUTH_STATE_TTL_MS);
+      .prepare('INSERT INTO oauth_states (state, next, exp) VALUES (?, ?, ?)')
+      .run(state, next, Date.now() + OAUTH_STATE_TTL_MS);
     return state;
   }
 
-  consumeOauthState(state?: string): boolean {
-    if (!state) return false;
-    const row = this.db.db.prepare('SELECT exp FROM oauth_states WHERE state = ?').get(state) as
-      | { exp: number }
+  consumeOauthState(state?: string): { valid: boolean; next: string } {
+    if (!state) return { valid: false, next: '/' };
+    const row = this.db.db.prepare('SELECT next, exp FROM oauth_states WHERE state = ?').get(state) as
+      | { next: string; exp: number }
       | undefined;
     if (row) this.db.db.prepare('DELETE FROM oauth_states WHERE state = ?').run(state);
-    return !!row && Date.now() <= row.exp;
+    return { valid: !!row && Date.now() <= row.exp, next: row?.next || '/' };
   }
 
   cookieHeader(value: string, maxAgeSeconds = this.ttlSeconds): string {

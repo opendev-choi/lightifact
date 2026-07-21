@@ -10,7 +10,10 @@ export class UnauthorizedFilter implements ExceptionFilter {
     const res = ctx.getResponse<Response>();
     const wantsHtml = req.method === 'GET' && (req.headers.accept || '').includes('text/html') && !req.path.startsWith('/api/');
     if (wantsHtml) {
-      res.redirect('/login');
+      // 원래 가려던 경로를 next 로 보존 (로그인 후 복귀)
+      const original = req.originalUrl || '/';
+      const loc = original === '/' ? '/login' : `/login?next=${encodeURIComponent(original)}`;
+      res.redirect(loc);
       return;
     }
     const body = exception.getResponse();

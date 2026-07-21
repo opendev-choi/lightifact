@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 CREATE TABLE IF NOT EXISTS oauth_states (
   state  TEXT PRIMARY KEY,
+  next   TEXT NOT NULL DEFAULT '',
   exp    INTEGER NOT NULL
 );
 `;
@@ -55,7 +56,16 @@ export class DbService implements OnModuleDestroy {
     this.db.pragma('journal_mode = WAL');
     this.db.pragma('foreign_keys = ON');
     this.db.exec(SCHEMA);
+    this.ensureColumn('oauth_states', 'next', "TEXT NOT NULL DEFAULT ''"); // 기존 DB 마이그레이션
     this.logger.log(`SQLite: ${file}`);
+  }
+
+  // 컬럼이 없으면 추가 (idempotent 마이그레이션)
+  private ensureColumn(table: string, col: string, def: string): void {
+    const cols = this.db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+    if (!cols.some((c) => c.name === col)) {
+      this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`);
+    }
   }
 
   onModuleDestroy(): void {

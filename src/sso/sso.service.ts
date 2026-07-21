@@ -24,21 +24,22 @@ export class SsoService {
   }
 
   // Google 로그인 시작 URL (state = 서명값으로 CSRF 방지)
-  authUrl(): string {
+  authUrl(next = '/'): string {
     const p = new URLSearchParams({
       client_id: this.settings.sso.clientId,
       redirect_uri: this.redirectUri(),
       response_type: 'code',
       scope: 'openid email profile',
-      state: this.session.createOauthState(),
+      state: this.session.createOauthState(next),
       prompt: 'select_account',
     });
     return `https://accounts.google.com/o/oauth2/v2/auth?${p.toString()}`;
   }
 
-  // code → email (허용 도메인 검증). 실패 시 예외.
-  async exchange(code: string, state: string): Promise<string> {
-    if (!this.session.consumeOauthState(state)) throw new Error('invalid oauth state');
+  // code → { email, next } (허용 도메인 검증). 실패 시 예외.
+  async exchange(code: string, state: string): Promise<{ email: string; next: string }> {
+    const st = this.session.consumeOauthState(state);
+    if (!st.valid) throw new Error('invalid oauth state');
     const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -61,6 +62,6 @@ export class SsoService {
     if (!email || (dom && !email.endsWith(`@${dom}`))) {
       throw new Error(`허용되지 않은 계정 (${dom || '?'} 도메인만 가능)`);
     }
-    return email;
+    return { email, next: st.next };
   }
 }

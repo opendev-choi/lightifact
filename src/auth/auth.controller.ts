@@ -1,8 +1,9 @@
-import { Body, Controller, Get, Header, Param, Post, Req, Res } from '@nestjs/common';
+import { Body, Controller, Get, Header, Param, Post, Query, Req, Res } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { UsersService } from '../users/users.service';
 import { PasswordService } from './password.service';
 import { SessionService, SESSION_COOKIE } from './session.service';
+import { safeNext } from '../common/safe-next';
 import { SettingsService } from '../settings/settings.service';
 import { ViewService } from '../views/view.service';
 
@@ -18,8 +19,8 @@ export class AuthController {
 
   @Get('login')
   @Header('Content-Type', 'text/html; charset=utf-8')
-  login(): string {
-    return this.view.login(this.settings.ssoConfigured());
+  login(@Query('next') next: string): string {
+    return this.view.login(this.settings.ssoConfigured(), safeNext(next));
   }
 
   @Post('api/login')

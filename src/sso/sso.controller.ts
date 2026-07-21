@@ -6,6 +6,7 @@ import { UsersService } from '../users/users.service';
 import { SessionService } from '../auth/session.service';
 import { ViewService } from '../views/view.service';
 import { AdminGuard, SessionGuard } from '../common/guards';
+import { safeNext } from '../common/safe-next';
 
 @Controller()
 export class SsoController {
@@ -18,12 +19,12 @@ export class SsoController {
   ) {}
 
   @Get('oauth2/start')
-  start(@Res() res: Response): void {
+  start(@Query('next') next: string, @Res() res: Response): void {
     if (!this.sso.configured()) {
       res.redirect('/login');
       return;
     }
-    res.redirect(this.sso.authUrl());
+    res.redirect(this.sso.authUrl(safeNext(next)));
   }
 
   @Get('oauth2/callback')
@@ -33,7 +34,7 @@ export class SsoController {
       return;
     }
     try {
-      const email = await this.sso.exchange(code, state);
+      const { email, next } = await this.sso.exchange(code, state);
       if (!this.users.get(email)) {
         if (!this.settings.sso.autoJoin) {
           res
@@ -45,7 +46,7 @@ export class SsoController {
         this.users.upsert(email, null, { sso: true }); // 허용 도메인 자동 가입
       }
       res.setHeader('Set-Cookie', this.session.cookieHeader(this.session.create(email)));
-      res.redirect('/');
+      res.redirect(safeNext(next));
     } catch (e) {
       res
         .status(403)
