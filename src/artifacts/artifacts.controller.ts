@@ -45,7 +45,8 @@ export class ArtifactsController {
   @UseGuards(SessionGuard)
   @Header('Content-Type', 'text/html; charset=utf-8')
   index(@CurrentUser() me: string): string {
-    return this.view.index(me, !!this.users.get(me)?.admin, this.artifacts.list());
+    const u = this.users.get(me);
+    return this.view.index(me, !!u?.admin, this.artifacts.list(), u?.apiToken ?? '');
   }
 
   // 삭제 (본인 소유 또는 admin)

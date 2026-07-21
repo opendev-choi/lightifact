@@ -63,7 +63,7 @@ export class ViewService {
       <span class="who">${esc(me)}</span><a href="/account">내 계정</a>${admin ? '<a href="/settings">설정</a>' : ''}<a href="/logout">로그아웃</a></header>`;
   }
 
-  index(me: string, admin: boolean, items: ArtifactMeta[]): string {
+  index(me: string, admin: boolean, items: ArtifactMeta[], token: string): string {
     const list = items.length
       ? items.map((m) => {
           const canDel = admin || m.owner === me;
@@ -73,15 +73,16 @@ export class ViewService {
           return `<li><a href="/a/${esc(m.slug)}">${esc(m.title)}</a> <code>${esc(m.slug.slice(0, 8))}</code> <span class="who">${esc(m.owner)}</span>${del}</li>`;
         }).join('')
       : '<li class="empty">아직 artifact가 없습니다.</li>';
+    const setupCmd = `D=~/.claude/skills/lightifact; mkdir -p "$D"; for f in SKILL.md share.mjs; do curl -fsSL "https://raw.githubusercontent.com/opendev-choi/lightifact/main/.claude/skills/lightifact/$f" -o "$D/$f"; done; grep -q LIGHTIFACT_TOKEN ~/.zshrc || echo 'export LIGHTIFACT_TOKEN=${token}' >> ~/.zshrc; export LIGHTIFACT_TOKEN=${token}; echo '✅ lightifact 스킬+토큰 설정 완료 (새 터미널부터 적용)'`;
     const body = `${this.bar(me, admin)}<div class="wrap">
-      <form id="up"><input name="title" placeholder="제목 (선택)">
-      <textarea name="html" placeholder="self-contained HTML 붙여넣기..." required></textarea>
-      <button>공유 링크 생성</button></form><div id="result"></div>
-      <h2>목록</h2><ul class="list">${list}</ul></div>
-      <script>document.getElementById('up').addEventListener('submit',async(e)=>{e.preventDefault();const f=e.target;
-      const r=await fetch('/artifacts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:f.title.value,html:f.html.value})});
-      const j=await r.json();document.getElementById('result').innerHTML=j.url?('생성됨: <a href="'+j.url+'">'+j.url+'</a>'):('에러: '+(j.error||''));
-      if(j.url)setTimeout(()=>location.reload(),800);});</script>`;
+      <details class="setup"><summary>⚙️ Claude Code 스킬 설치 + 토큰 설정 — 한 줄</summary>
+        <p class="hint">아래를 터미널에 붙여넣기. 스킬 설치 + 본인 토큰(<code>${esc(me)}</code>) 등록까지 한 번에.</p>
+        <pre id="cmd">${esc(setupCmd)}</pre>
+        <button class="copy" onclick="navigator.clipboard.writeText(document.getElementById('cmd').textContent).then(()=>{this.textContent='복사됨 ✓'})">복사</button>
+      </details>
+      <h2>공유된 artifact</h2>
+      <p class="hint">업로드는 스킬 <code>/lightifact</code> 또는 API 토큰(Bearer)으로.</p>
+      <ul class="list">${list}</ul></div>`;
     return this.layout('lightifact', body, 'app');
   }
 
@@ -163,5 +164,9 @@ const MODE_CSS: Record<Mode, string> = {
     table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;padding:7px 8px;border-bottom:1px solid #8882}
     .list{list-style:none;padding:0}.list li{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #8882}
     .delf{margin-left:auto}.del{background:transparent;color:#e5484d;border:1px solid #8886;padding:3px 9px;font-size:12px;font-weight:500}
-    #result{margin:10px 0;font-size:14px}.tok{font-size:13px;word-break:break-all}`,
+    #result{margin:10px 0;font-size:14px}.tok{font-size:13px;word-break:break-all}
+    .setup{margin:6px 0 20px;border:1px solid #8886;border-radius:10px;padding:12px 14px}
+    .setup summary{cursor:pointer;font-weight:600;font-size:14px}
+    .setup pre{margin:10px 0 0;background:#8881;padding:11px;border-radius:8px;font-size:12px;line-height:1.5;white-space:pre-wrap;word-break:break-all;font-family:ui-monospace,monospace}
+    .copy{margin-top:8px;padding:5px 12px;font-size:12px}`,
 };
