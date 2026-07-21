@@ -1,6 +1,7 @@
 ---
 name: lightifact
-description: 생성한 HTML artifact를 사내 lightifact 서비스에 올려 공유 링크를 발급한다. 사용자가 "이거 공유해줘", "artifact 링크 만들어줘", "share this", "공유 링크 뽑아줘" 처럼 방금 만든 HTML/페이지를 남과 공유할 링크를 원할 때 사용한다.
+description: 생성한 HTML artifact를 사내 lightifact 서비스에 올려 공유 링크를 발급한다. 사용자가 "이거 공유해줘", "artifact 링크 만들어줘", "아티팩트로 만들어서 공유해줘", "share this", "공유 링크 뽑아줘" 처럼 방금 만든 HTML/페이지를 남과 공유(또는 기존 것 수정)할 링크를 원할 때 사용한다.
+allowed-tools: Write, Bash(node *), Bash(curl *)
 ---
 
 # lightifact
