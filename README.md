@@ -6,21 +6,22 @@ HTML artifact를 올리고 **sandboxed iframe**으로 공유하는 경량 서비
 ## 실행 (로컬)
 ```bash
 npm install
-npm run build && SESSION_SECRET=dev-secret-key npm start   # 또는: npm run start:dev
+npm run build && npm start        # 또는: npm run start:dev
 # http://localhost:4321 → 첫 접속 시 /setup 에서 관리자 계정 생성 → 로그인
 ```
+주입할 시크릿 없음 — 로그인/세션/SSO 전부 앱 내부(SQLite)에서 관리.
 
 ## 인증
 - **읽기·쓰기 전부 로그인 필요.** email+password (또는 설정 시 Google SSO).
-- **최초 실행 시 `/setup` 화면**에서 첫 관리자 생성. 이후 admin 이 `/settings` 에서 사용자 추가·초대·SSO 관리.
+- **최초 실행 시 `/setup`** 에서 첫 관리자 생성. 이후 admin 이 `/settings` 에서 사용자 추가·초대·SSO 관리.
 - 일반 사용자는 관리 기능 없음. 본인 API 토큰은 `/account` 에서 확인.
 - 에이전트 업로드는 사용자별 **API 토큰**(Bearer).
-- 세션=서명 쿠키(HMAC, 무상태), 비밀번호=scrypt. 저장은 `users.json`/`settings.json`/`invites.json`(PVC).
+- 세션=DB 저장 랜덤 토큰(서버측, revocable), 비밀번호=scrypt. **시크릿 주입 불필요.**
 
 ## 구조 (NestJS 모듈)
 `auth`(로그인/셋업/초대·세션·scrypt) · `users`(사용자/초대) · `settings`(SSO 설정) ·
-`sso`(Google OAuth) · `artifacts`(업로드/뷰어/CSP) · `store`(JSON 파일 저장) · `views`(서버렌더).
-config는 `@nestjs/config` + Joi 검증(`SESSION_SECRET` 등).
+`sso`(Google OAuth) · `artifacts`(업로드/뷰어/CSP) · `db`(SQLite) · `views`(서버렌더).
+config는 `@nestjs/config` + Joi 검증. 저장은 SQLite 파일 하나(`data/lightifact.db`).
 
 ## 사용
 - 웹: 로그인 → HTML 붙여넣고 "공유 링크 생성"
@@ -54,7 +55,7 @@ bash .claude/skills/lightifact/install.sh   # → ~/.claude/skills/lightifact/
 로컬은 `export LIGHTIFACT_URL=http://localhost:4321`.
 
 ## 저장 / 격리
-- 저장: `data/<slug>.html` + `<slug>.json` (파일시스템, DB 없음)
+- 저장: **SQLite** `data/lightifact.db` (사용자·세션·초대·설정·artifact). PVC 파일 하나.
 - 격리: artifact는 `sandbox` iframe + strict CSP로 렌더 → 외부 네트워크 요청 전부 차단
   (Claude Artifacts와 동일한 철학). self-contained HTML만 정상 동작.
 

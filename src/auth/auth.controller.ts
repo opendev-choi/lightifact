@@ -1,8 +1,8 @@
-import { Body, Controller, Get, Header, Param, Post, Res } from '@nestjs/common';
-import { Response } from 'express';
+import { Body, Controller, Get, Header, Param, Post, Req, Res } from '@nestjs/common';
+import { Request, Response } from 'express';
 import { UsersService } from '../users/users.service';
 import { PasswordService } from './password.service';
-import { SessionService } from './session.service';
+import { SessionService, SESSION_COOKIE } from './session.service';
 import { SettingsService } from '../settings/settings.service';
 import { ViewService } from '../views/view.service';
 
@@ -30,7 +30,7 @@ export class AuthController {
       res.status(401).json({ error: '이메일 또는 비밀번호가 올바르지 않습니다' });
       return;
     }
-    res.setHeader('Set-Cookie', this.session.cookieHeader(this.session.sign(email)));
+    res.setHeader('Set-Cookie', this.session.cookieHeader(this.session.create(email)));
     res.json({ ok: true, email });
   }
 
@@ -52,12 +52,13 @@ export class AuthController {
       return;
     }
     this.users.upsert(email, body.password!, { admin: true });
-    res.setHeader('Set-Cookie', this.session.cookieHeader(this.session.sign(email)));
+    res.setHeader('Set-Cookie', this.session.cookieHeader(this.session.create(email)));
     res.json({ ok: true });
   }
 
   @Get('logout')
-  logout(@Res() res: Response): void {
+  logout(@Req() req: Request, @Res() res: Response): void {
+    this.session.destroy((req as any).cookies?.[SESSION_COOKIE]);
     res.setHeader('Set-Cookie', this.session.clearHeader());
     res.redirect('/login');
   }
@@ -81,7 +82,7 @@ export class AuthController {
       res.status(400).json({ error: '초대가 유효하지 않습니다' });
       return;
     }
-    res.setHeader('Set-Cookie', this.session.cookieHeader(this.session.sign(email)));
+    res.setHeader('Set-Cookie', this.session.cookieHeader(this.session.create(email)));
     res.json({ ok: true });
   }
 }

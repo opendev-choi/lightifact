@@ -17,12 +17,12 @@ export class ArtifactsController {
   // 업로드: 세션 또는 Bearer API 토큰
   @Post('artifacts')
   @UseGuards(WriteGuard)
-  async create(
+  create(
     @Body() body: unknown,
     @Query('title') qTitle: string | undefined,
     @CurrentUser() owner: string,
     @Res() res: Response,
-  ): Promise<void> {
+  ): void {
     let html: string | undefined;
     let title = qTitle || '';
     if (typeof body === 'string') {
@@ -36,7 +36,7 @@ export class ArtifactsController {
       res.status(400).json({ error: 'html body is empty' });
       return;
     }
-    const { slug, url } = await this.artifacts.create(html, title, owner);
+    const { slug, url } = this.artifacts.create(html, title, owner);
     res.status(201).json({ slug, url, owner });
   }
 
@@ -44,16 +44,15 @@ export class ArtifactsController {
   @Get()
   @UseGuards(SessionGuard)
   @Header('Content-Type', 'text/html; charset=utf-8')
-  async index(@CurrentUser() me: string): Promise<string> {
-    const items = await this.artifacts.list();
-    return this.view.index(me, !!this.users.get(me)?.admin, items);
+  index(@CurrentUser() me: string): string {
+    return this.view.index(me, !!this.users.get(me)?.admin, this.artifacts.list());
   }
 
   // 뷰어 (sandboxed iframe)
   @Get('a/:slug')
   @UseGuards(SessionGuard)
-  async viewer(@Param('slug') slug: string, @Res() res: Response): Promise<void> {
-    const meta = this.artifacts.isValidSlug(slug) ? await this.artifacts.meta(slug) : null;
+  viewer(@Param('slug') slug: string, @Res() res: Response): void {
+    const meta = this.artifacts.meta(slug);
     if (!meta) {
       res.status(404).type('text/html').send(this.view.message('Not found', '404', '해당 artifact를 찾을 수 없습니다.'));
       return;
@@ -64,16 +63,15 @@ export class ArtifactsController {
   // 원본 (strict CSP, iframe 전용)
   @Get('raw/:slug')
   @UseGuards(SessionGuard)
-  async raw(@Param('slug') slug: string, @Res() res: Response): Promise<void> {
-    if (!this.artifacts.has(slug)) {
+  raw(@Param('slug') slug: string, @Res() res: Response): void {
+    const html = this.artifacts.has(slug) ? this.artifacts.html(slug) : null;
+    if (html === null) {
       res.status(404).send('not found');
       return;
     }
-    res
-      .status(200)
-      .setHeader('Content-Security-Policy', RAW_CSP);
+    res.setHeader('Content-Security-Policy', RAW_CSP);
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.setHeader('Cache-Control', 'no-store');
-    res.send(await this.artifacts.html(slug));
+    res.status(200).send(html);
   }
 }

@@ -1,39 +1,47 @@
 import { Injectable } from '@nestjs/common';
-import { StoreService } from '../store/store.service';
-import { Settings, SsoSettings } from '../common/types';
+import { DbService } from '../db/db.service';
+import { SsoSettings } from '../common/types';
 
-const SETTINGS_FILE = 'settings.json';
-const DEFAULTS: Settings = {
-  sso: { enabled: false, clientId: '', clientSecret: '', allowedDomain: '' },
-};
+const DEFAULT_SSO: SsoSettings = { enabled: false, clientId: '', clientSecret: '', allowedDomain: '' };
 
 @Injectable()
 export class SettingsService {
-  private settings: Settings;
+  constructor(private readonly db: DbService) {}
 
-  constructor(private readonly store: StoreService) {
-    this.settings = this.store.readJson<Settings>(SETTINGS_FILE, DEFAULTS);
-    this.settings.sso = { ...DEFAULTS.sso, ...this.settings.sso };
+  private read<T>(key: string, fallback: T): T {
+    const row = this.db.db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined;
+    if (!row) return fallback;
+    try {
+      return JSON.parse(row.value) as T;
+    } catch {
+      return fallback;
+    }
+  }
+
+  private write(key: string, value: unknown): void {
+    this.db.db
+      .prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
+      .run(key, JSON.stringify(value));
   }
 
   get sso(): SsoSettings {
-    return this.settings.sso;
+    return { ...DEFAULT_SSO, ...this.read<Partial<SsoSettings>>('sso', {}) };
   }
 
   ssoConfigured(): boolean {
-    const s = this.settings.sso;
+    const s = this.sso;
     return s.enabled && !!s.clientId && !!s.clientSecret;
   }
 
   updateSso(patch: Partial<SsoSettings>): void {
-    // clientSecret 이 빈 값이면 기존 유지 (마스킹된 폼 대응)
+    const current = this.sso;
     const next: SsoSettings = {
       enabled: patch.enabled ?? false,
       clientId: (patch.clientId ?? '').trim(),
-      clientSecret: (patch.clientSecret || this.settings.sso.clientSecret || '').trim(),
+      // clientSecret 빈 값이면 기존 유지 (마스킹 폼 대응)
+      clientSecret: (patch.clientSecret || current.clientSecret || '').trim(),
       allowedDomain: (patch.allowedDomain ?? '').trim(),
     };
-    this.settings.sso = next;
-    this.store.writeJson(SETTINGS_FILE, this.settings);
+    this.write('sso', next);
   }
 }

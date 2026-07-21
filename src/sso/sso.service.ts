@@ -30,7 +30,7 @@ export class SsoService {
       redirect_uri: this.redirectUri(),
       response_type: 'code',
       scope: 'openid email profile',
-      state: this.session.sign('sso-state'),
+      state: this.session.createOauthState(),
       prompt: 'select_account',
     });
     return `https://accounts.google.com/o/oauth2/v2/auth?${p.toString()}`;
@@ -38,7 +38,7 @@ export class SsoService {
 
   // code → email (허용 도메인 검증). 실패 시 예외.
   async exchange(code: string, state: string): Promise<string> {
-    if (this.session.verify(state) !== 'sso-state') throw new Error('invalid oauth state');
+    if (!this.session.consumeOauthState(state)) throw new Error('invalid oauth state');
     const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },

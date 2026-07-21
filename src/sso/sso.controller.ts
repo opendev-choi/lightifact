@@ -35,7 +35,7 @@ export class SsoController {
     try {
       const email = await this.sso.exchange(code, state);
       if (!this.users.get(email)) this.users.upsert(email, null, { sso: true });
-      res.setHeader('Set-Cookie', this.session.cookieHeader(this.session.sign(email)));
+      res.setHeader('Set-Cookie', this.session.cookieHeader(this.session.create(email)));
       res.redirect('/');
     } catch (e) {
       res

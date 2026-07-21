@@ -1,7 +1,7 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { envValidationSchema } from './config/env.validation';
-import { StoreModule } from './store/store.module';
+import { DbModule } from './db/db.module';
 import { AuthCoreModule } from './auth/auth-core.module';
 import { UsersModule } from './users/users.module';
 import { SettingsModule } from './settings/settings.module';
@@ -18,7 +18,7 @@ import { AuthMiddleware } from './common/auth.middleware';
       isGlobal: true,
       validationSchema: envValidationSchema,
     }),
-    StoreModule,
+    DbModule,
     AuthCoreModule,
     UsersModule,
     SettingsModule,

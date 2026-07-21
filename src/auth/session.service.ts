@@ -1,44 +1,66 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
+import { DbService } from '../db/db.service';
 
 export const SESSION_COOKIE = 'lf_session';
 const TTL_MS = 1000 * 60 * 60 * 12; // 12h
+const OAUTH_STATE_TTL_MS = 1000 * 60 * 10; // 10m
 
-// 무상태 서명 세션: base64url(payload).hmac
+// 서버측 세션: 랜덤 토큰을 DB 에 저장 (무상태 서명 아님 → 시크릿 불필요, revocable).
 @Injectable()
 export class SessionService {
-  private readonly secret: string;
   readonly ttlSeconds = TTL_MS / 1000;
   readonly secure: boolean;
 
-  constructor(config: ConfigService) {
-    this.secret = config.get<string>('SESSION_SECRET', 'dev-insecure-session-secret');
+  constructor(
+    private readonly db: DbService,
+    config: ConfigService,
+  ) {
     this.secure = (config.get<string>('BASE_URL') || '').startsWith('https://');
   }
 
-  sign(email: string): string {
-    const payload = Buffer.from(JSON.stringify({ email, exp: Date.now() + TTL_MS })).toString('base64url');
-    const sig = createHmac('sha256', this.secret).update(payload).digest('base64url');
-    return `${payload}.${sig}`;
+  create(email: string): string {
+    const token = randomBytes(32).toString('hex');
+    this.db.db
+      .prepare('INSERT INTO sessions (token, email, exp) VALUES (?, ?, ?)')
+      .run(token, email, Date.now() + TTL_MS);
+    return token;
   }
 
-  // 서명 검증 후 email 반환 (만료/위조 시 null). 사용자 존재 검증은 호출측에서.
-  verify(cookie?: string): string | null {
-    if (!cookie) return null;
-    const [payload, sig] = cookie.split('.');
-    if (!payload || !sig) return null;
-    const expected = createHmac('sha256', this.secret).update(payload).digest('base64url');
-    const a = Buffer.from(sig);
-    const b = Buffer.from(expected);
-    if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
-    try {
-      const { email, exp } = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
-      if (Date.now() > exp) return null;
-      return email as string;
-    } catch {
+  verify(token?: string): string | null {
+    if (!token) return null;
+    const row = this.db.db.prepare('SELECT email, exp FROM sessions WHERE token = ?').get(token) as
+      | { email: string; exp: number }
+      | undefined;
+    if (!row) return null;
+    if (Date.now() > row.exp) {
+      this.destroy(token);
       return null;
     }
+    return row.email;
+  }
+
+  destroy(token?: string): void {
+    if (token) this.db.db.prepare('DELETE FROM sessions WHERE token = ?').run(token);
+  }
+
+  // ── OAuth state (CSRF 방지, 단명) ──
+  createOauthState(): string {
+    const state = randomBytes(24).toString('hex');
+    this.db.db
+      .prepare('INSERT INTO oauth_states (state, exp) VALUES (?, ?)')
+      .run(state, Date.now() + OAUTH_STATE_TTL_MS);
+    return state;
+  }
+
+  consumeOauthState(state?: string): boolean {
+    if (!state) return false;
+    const row = this.db.db.prepare('SELECT exp FROM oauth_states WHERE state = ?').get(state) as
+      | { exp: number }
+      | undefined;
+    if (row) this.db.db.prepare('DELETE FROM oauth_states WHERE state = ?').run(state);
+    return !!row && Date.now() <= row.exp;
   }
 
   cookieHeader(value: string, maxAgeSeconds = this.ttlSeconds): string {
