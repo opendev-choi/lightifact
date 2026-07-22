@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { randomBytes } from 'node:crypto';
 import { DbService } from '../db/db.service';
 
@@ -11,14 +10,8 @@ const OAUTH_STATE_TTL_MS = 1000 * 60 * 10; // 10m
 @Injectable()
 export class SessionService {
   readonly ttlSeconds = TTL_MS / 1000;
-  readonly secure: boolean;
 
-  constructor(
-    private readonly db: DbService,
-    config: ConfigService,
-  ) {
-    this.secure = (config.get<string>('BASE_URL') || '').startsWith('https://');
-  }
+  constructor(private readonly db: DbService) {}
 
   create(email: string): string {
     const token = randomBytes(32).toString('hex');
@@ -63,11 +56,11 @@ export class SessionService {
     return { valid: !!row && Date.now() <= row.exp, next: row?.next || '/' };
   }
 
-  cookieHeader(value: string, maxAgeSeconds = this.ttlSeconds): string {
-    return `${SESSION_COOKIE}=${value}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAgeSeconds}${this.secure ? '; Secure' : ''}`;
+  cookieHeader(value: string, secure: boolean, maxAgeSeconds = this.ttlSeconds): string {
+    return `${SESSION_COOKIE}=${value}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAgeSeconds}${secure ? '; Secure' : ''}`;
   }
 
-  clearHeader(): string {
-    return this.cookieHeader('', 0);
+  clearHeader(secure: boolean): string {
+    return this.cookieHeader('', secure, 0);
   }
 }

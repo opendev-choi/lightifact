@@ -15,7 +15,9 @@ async function bootstrap(): Promise<void> {
   app.use(express.text({ type: ['text/html', 'text/plain'], limit }));
   app.use(cookieParser());
   app.useGlobalFilters(new UnauthorizedFilter());
-  app.getHttpAdapter().getInstance().disable('x-powered-by');
+  const expressApp = app.getHttpAdapter().getInstance();
+  expressApp.disable('x-powered-by');
+  expressApp.set('trust proxy', true); // ALB X-Forwarded-* 신뢰 (요청 기반 base URL 도출)
 
   const config = app.get(ConfigService);
   const port = config.get<number>('PORT', 4321);

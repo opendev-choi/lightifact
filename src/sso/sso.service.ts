@@ -1,33 +1,25 @@
 import { Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { SettingsService } from '../settings/settings.service';
 import { SessionService } from '../auth/session.service';
 
 // Google OAuth code flow + userinfo (별도 라이브러리 없이 fetch 로).
+// redirect_uri 는 요청 호스트 기반 base URL 로 구성 (BASE_URL 세팅 불필요).
 @Injectable()
 export class SsoService {
-  private readonly baseUrl: string;
   constructor(
-    config: ConfigService,
     private readonly settings: SettingsService,
     private readonly session: SessionService,
-  ) {
-    this.baseUrl = config.get<string>('BASE_URL', 'http://localhost:4321');
-  }
-
-  private redirectUri(): string {
-    return `${this.baseUrl}/oauth2/callback`;
-  }
+  ) {}
 
   configured(): boolean {
     return this.settings.ssoConfigured();
   }
 
-  // Google 로그인 시작 URL (state = 서명값으로 CSRF 방지)
-  authUrl(next = '/'): string {
+  // Google 로그인 시작 URL (state 로 CSRF 방지 + 로그인 후 복귀 next 보관)
+  authUrl(baseUrl: string, next = '/'): string {
     const p = new URLSearchParams({
       client_id: this.settings.sso.clientId,
-      redirect_uri: this.redirectUri(),
+      redirect_uri: `${baseUrl}/oauth2/callback`,
       response_type: 'code',
       scope: 'openid email profile',
       state: this.session.createOauthState(next),
@@ -37,7 +29,7 @@ export class SsoService {
   }
 
   // code → { email, next } (허용 도메인 검증). 실패 시 예외.
-  async exchange(code: string, state: string): Promise<{ email: string; next: string }> {
+  async exchange(baseUrl: string, code: string, state: string): Promise<{ email: string; next: string }> {
     const st = this.session.consumeOauthState(state);
     if (!st.valid) throw new Error('invalid oauth state');
     const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
@@ -47,7 +39,7 @@ export class SsoService {
         code,
         client_id: this.settings.sso.clientId,
         client_secret: this.settings.sso.clientSecret,
-        redirect_uri: this.redirectUri(),
+        redirect_uri: `${baseUrl}/oauth2/callback`,
         grant_type: 'authorization_code',
       }),
     });

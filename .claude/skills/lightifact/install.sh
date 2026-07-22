@@ -10,5 +10,5 @@ mkdir -p "$DEST"
 cp "$SRC/SKILL.md" "$SRC/share.mjs" "$DEST/"
 
 echo "✅ 설치 완료: $DEST"
-echo "   대상 서버: ${LIGHTIFACT_URL:-https://lightifact.cardoc.kr}"
+echo "   대상 서버: ${LIGHTIFACT_URL:-__LIGHTIFACT_URL__}"
 echo "   로컬로 쓰려면: export LIGHTIFACT_URL=http://localhost:4321"

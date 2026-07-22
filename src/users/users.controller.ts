@@ -1,10 +1,11 @@
-import { Body, Controller, Get, Header, Post, Res, UseGuards } from '@nestjs/common';
-import { Response } from 'express';
+import { Body, Controller, Get, Header, Post, Req, Res, UseGuards } from '@nestjs/common';
+import { Request, Response } from 'express';
 import { UsersService } from './users.service';
 import { SettingsService } from '../settings/settings.service';
 import { ViewService } from '../views/view.service';
 import { AdminGuard, SessionGuard } from '../common/guards';
 import { CurrentUser } from '../common/current-user.decorator';
+import { requestBaseUrl } from '../common/base-url';
 
 @Controller()
 @UseGuards(SessionGuard)
@@ -32,8 +33,8 @@ export class UsersController {
   @Get('settings')
   @UseGuards(AdminGuard)
   @Header('Content-Type', 'text/html; charset=utf-8')
-  settingsPage(@CurrentUser() me: string): string {
-    return this.view.settings(me, this.users.list(), this.users.listInvites(), this.settings.sso);
+  settingsPage(@CurrentUser() me: string, @Req() req: Request): string {
+    return this.view.settings(me, this.users.list(), this.users.listInvites(), this.settings.sso, requestBaseUrl(req));
   }
 
   @Post('api/users')

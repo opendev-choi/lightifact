@@ -1,10 +1,11 @@
-import { Body, Controller, Get, Header, Param, Post, Put, Query, Res, UseGuards } from '@nestjs/common';
-import { Response } from 'express';
+import { Body, Controller, Get, Header, Param, Post, Put, Query, Req, Res, UseGuards } from '@nestjs/common';
+import { Request, Response } from 'express';
 import { ArtifactsService, RAW_CSP } from './artifacts.service';
 import { UsersService } from '../users/users.service';
 import { ViewService } from '../views/view.service';
 import { SessionGuard, WriteGuard } from '../common/guards';
 import { CurrentUser } from '../common/current-user.decorator';
+import { requestBaseUrl } from '../common/base-url';
 
 @Controller()
 export class ArtifactsController {
@@ -21,6 +22,7 @@ export class ArtifactsController {
     @Body() body: unknown,
     @Query('title') qTitle: string | undefined,
     @CurrentUser() owner: string,
+    @Req() req: Request,
     @Res() res: Response,
   ): void {
     let html: string | undefined;
@@ -36,15 +38,15 @@ export class ArtifactsController {
       res.status(400).json({ error: 'html body is empty' });
       return;
     }
-    const { slug, url } = this.artifacts.create(html, title, owner);
-    res.status(201).json({ slug, url, owner });
+    const slug = this.artifacts.create(html, title, owner);
+    res.status(201).json({ slug, url: `${requestBaseUrl(req)}/a/${slug}`, owner });
   }
 
   // 목록 + 업로드 UI (로그인 필요)
   @Get()
   @UseGuards(SessionGuard)
   @Header('Content-Type', 'text/html; charset=utf-8')
-  index(@CurrentUser() me: string, @Query('mine') mine?: string, @Query('page') pageQ?: string): string {
+  index(@CurrentUser() me: string, @Req() req: Request, @Query('mine') mine?: string, @Query('page') pageQ?: string): string {
     const u = this.users.get(me);
     const PAGE_SIZE = 20;
     const onlyMine = mine === '1';
@@ -55,7 +57,7 @@ export class ArtifactsController {
     if (!Number.isFinite(page) || page < 1) page = 1;
     if (page > totalPages) page = totalPages;
     const items = this.artifacts.list({ owner, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE });
-    return this.view.index(me, !!u?.admin, items, u?.apiToken ?? '', { onlyMine, page, totalPages, total });
+    return this.view.index(me, !!u?.admin, items, u?.apiToken ?? '', { onlyMine, page, totalPages, total }, requestBaseUrl(req));
   }
 
   // 덮어쓰기 (본인 소유 또는 admin) — slug·링크 유지
@@ -66,6 +68,7 @@ export class ArtifactsController {
     @Body() body: unknown,
     @Query('title') qTitle: string | undefined,
     @CurrentUser() me: string,
+    @Req() req: Request,
     @Res() res: Response,
   ): void {
     const meta = this.artifacts.meta(slug);
@@ -91,7 +94,7 @@ export class ArtifactsController {
       return;
     }
     this.artifacts.update(slug, html, title);
-    res.json({ slug, url: this.artifacts.shareUrl(slug), owner: meta.owner, updated: true });
+    res.json({ slug, url: `${requestBaseUrl(req)}/a/${slug}`, owner: meta.owner, updated: true });
   }
 
   // 삭제 (본인 소유 또는 admin)

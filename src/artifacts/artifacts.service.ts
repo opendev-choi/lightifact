@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'node:crypto';
 import { DbService } from '../db/db.service';
 import { ArtifactMeta } from '../common/types';
@@ -20,13 +19,7 @@ const SLUG_RE = /^[a-zA-Z0-9-]{6,64}$/;
 
 @Injectable()
 export class ArtifactsService {
-  private readonly baseUrl: string;
-  constructor(
-    private readonly db: DbService,
-    config: ConfigService,
-  ) {
-    this.baseUrl = config.get<string>('BASE_URL', 'http://localhost:4321');
-  }
+  constructor(private readonly db: DbService) {}
 
   private get sql() {
     return this.db.db;
@@ -36,16 +29,12 @@ export class ArtifactsService {
     return SLUG_RE.test(slug);
   }
 
-  shareUrl(slug: string): string {
-    return `${this.baseUrl}/a/${slug}`;
-  }
-
-  create(html: string, title: string, owner: string): { slug: string; url: string } {
+  create(html: string, title: string, owner: string): string {
     const slug = randomUUID();
     this.sql
       .prepare("INSERT INTO artifacts (slug, title, owner, html, bytes, created_at, visibility) VALUES (?, ?, ?, ?, ?, ?, 'public')")
       .run(slug, title?.trim() || 'Untitled artifact', owner, html, Buffer.byteLength(html), Date.now());
-    return { slug, url: `${this.baseUrl}/a/${slug}` };
+    return slug;
   }
 
   setVisibility(slug: string, visibility: 'public' | 'private'): void {

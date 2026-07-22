@@ -4,6 +4,7 @@ import { UsersService } from '../users/users.service';
 import { PasswordService } from './password.service';
 import { SessionService, SESSION_COOKIE } from './session.service';
 import { safeNext } from '../common/safe-next';
+import { isSecure } from '../common/base-url';
 import { SettingsService } from '../settings/settings.service';
 import { ViewService } from '../views/view.service';
 
@@ -24,7 +25,7 @@ export class AuthController {
   }
 
   @Post('api/login')
-  apiLogin(@Body() body: { email?: string; password?: string }, @Res() res: Response): void {
+  apiLogin(@Body() body: { email?: string; password?: string }, @Req() req: Request, @Res() res: Response): void {
     if (!this.settings.passwordLoginAllowed()) {
       res.status(403).json({ error: '이 워크스페이스는 Google 로그인만 허용합니다' });
       return;
@@ -35,7 +36,7 @@ export class AuthController {
       res.status(401).json({ error: '이메일 또는 비밀번호가 올바르지 않습니다' });
       return;
     }
-    res.setHeader('Set-Cookie', this.session.cookieHeader(this.session.create(email)));
+    res.setHeader('Set-Cookie', this.session.cookieHeader(this.session.create(email), isSecure(req)));
     res.json({ ok: true, email });
   }
 
@@ -46,7 +47,7 @@ export class AuthController {
   }
 
   @Post('api/setup')
-  apiSetup(@Body() body: { email?: string; password?: string }, @Res() res: Response): void {
+  apiSetup(@Body() body: { email?: string; password?: string }, @Req() req: Request, @Res() res: Response): void {
     if (this.users.count() > 0) {
       res.status(403).json({ error: '이미 초기화됨' });
       return;
@@ -57,14 +58,14 @@ export class AuthController {
       return;
     }
     this.users.upsert(email, body.password!, { admin: true });
-    res.setHeader('Set-Cookie', this.session.cookieHeader(this.session.create(email)));
+    res.setHeader('Set-Cookie', this.session.cookieHeader(this.session.create(email), isSecure(req)));
     res.json({ ok: true });
   }
 
   @Get('logout')
   logout(@Req() req: Request, @Res() res: Response): void {
     this.session.destroy((req as any).cookies?.[SESSION_COOKIE]);
-    res.setHeader('Set-Cookie', this.session.clearHeader());
+    res.setHeader('Set-Cookie', this.session.clearHeader(isSecure(req)));
     res.redirect('/login');
   }
 
@@ -77,7 +78,7 @@ export class AuthController {
   }
 
   @Post('api/invite/accept')
-  acceptInvite(@Body() body: { token?: string; password?: string }, @Res() res: Response): void {
+  acceptInvite(@Body() body: { token?: string; password?: string }, @Req() req: Request, @Res() res: Response): void {
     if ((body.password || '').length < 8) {
       res.status(400).json({ error: '비밀번호 8자 이상' });
       return;
@@ -87,7 +88,7 @@ export class AuthController {
       res.status(400).json({ error: '초대가 유효하지 않습니다' });
       return;
     }
-    res.setHeader('Set-Cookie', this.session.cookieHeader(this.session.create(email)));
+    res.setHeader('Set-Cookie', this.session.cookieHeader(this.session.create(email), isSecure(req)));
     res.json({ ok: true });
   }
 }

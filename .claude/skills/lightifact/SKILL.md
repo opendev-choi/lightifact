@@ -10,7 +10,7 @@ HTML 한 덩어리를 사내 `lightifact` 서비스에 업로드하고 공유 UR
 링크를 아는 사람은 사내망/VPN에서 브라우저로 열람할 수 있다.
 
 ## 전제
-- 배포 주소: `https://lightifact.cardoc.kr` (사내망/VPN only, 읽기·쓰기 전부 로그인 필요)
+- 배포 주소: `__LIGHTIFACT_URL__` (사내망/VPN only, 읽기·쓰기 전부 로그인 필요)
 - 업로드 인증: 환경변수 `LIGHTIFACT_TOKEN` = 본인 **API 토큰**(웹 `/settings` 에서 확인).
   share.mjs 가 Bearer 헤더로 자동 전송. 미설정이면 401 → 토큰을 export 할 것.
 - 로컬 테스트 시: `LIGHTIFACT_URL=http://localhost:4321`
@@ -27,7 +27,7 @@ HTML 한 덩어리를 사내 `lightifact` 서비스에 업로드하고 공유 UR
 ```bash
 node <skill-dir>/share.mjs <html파일경로> "제목"
 ```
-헬퍼는 `{ "slug": "...", "url": "https://lightifact.cardoc.kr/a/..." }` 를 출력한다.
+헬퍼는 `{ "slug": "...", "url": "__LIGHTIFACT_URL__/a/..." }` 를 출력한다.
 
 **기존 artifact 수정(덮어쓰기, 같은 링크 유지)** — 사용자가 "이거 고쳐서 업데이트해줘" 처럼
 이미 공유한 것을 바꾸길 원할 때. 기존 URL의 `slug` 를 넘긴다:
@@ -38,9 +38,9 @@ node <skill-dir>/share.mjs <html파일경로> "제목" --update <slug>
 
 curl로 직접 올려도 된다:
 ```bash
-curl -s -X POST "https://lightifact.cardoc.kr/artifacts?title=제목" \
+curl -s -X POST "__LIGHTIFACT_URL__/artifacts?title=제목" \
   -H "Content-Type: text/html" --data-binary @<html파일경로>          # 생성
-curl -s -X PUT  "https://lightifact.cardoc.kr/artifacts/<slug>?title=제목" \
+curl -s -X PUT  "__LIGHTIFACT_URL__/artifacts/<slug>?title=제목" \
   -H "Content-Type: text/html" --data-binary @<html파일경로>          # 수정(덮어쓰기)
 ```
 

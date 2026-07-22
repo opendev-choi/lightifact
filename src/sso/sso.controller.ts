@@ -1,5 +1,5 @@
-import { Body, Controller, Get, Post, Query, Res, UseGuards } from '@nestjs/common';
-import { Response } from 'express';
+import { Body, Controller, Get, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
+import { Request, Response } from 'express';
 import { SsoService } from './sso.service';
 import { SettingsService } from '../settings/settings.service';
 import { UsersService } from '../users/users.service';
@@ -7,6 +7,7 @@ import { SessionService } from '../auth/session.service';
 import { ViewService } from '../views/view.service';
 import { AdminGuard, SessionGuard } from '../common/guards';
 import { safeNext } from '../common/safe-next';
+import { requestBaseUrl, isSecure } from '../common/base-url';
 
 @Controller()
 export class SsoController {
@@ -19,22 +20,22 @@ export class SsoController {
   ) {}
 
   @Get('oauth2/start')
-  start(@Query('next') next: string, @Res() res: Response): void {
+  start(@Query('next') next: string, @Req() req: Request, @Res() res: Response): void {
     if (!this.sso.configured()) {
       res.redirect('/login');
       return;
     }
-    res.redirect(this.sso.authUrl(safeNext(next)));
+    res.redirect(this.sso.authUrl(requestBaseUrl(req), safeNext(next)));
   }
 
   @Get('oauth2/callback')
-  async callback(@Query('code') code: string, @Query('state') state: string, @Res() res: Response): Promise<void> {
+  async callback(@Query('code') code: string, @Query('state') state: string, @Req() req: Request, @Res() res: Response): Promise<void> {
     if (!this.sso.configured() || !code) {
       res.redirect('/login');
       return;
     }
     try {
-      const { email, next } = await this.sso.exchange(code, state);
+      const { email, next } = await this.sso.exchange(requestBaseUrl(req), code, state);
       if (!this.users.get(email)) {
         if (!this.settings.sso.autoJoin) {
           res
@@ -45,7 +46,7 @@ export class SsoController {
         }
         this.users.upsert(email, null, { sso: true }); // 허용 도메인 자동 가입
       }
-      res.setHeader('Set-Cookie', this.session.cookieHeader(this.session.create(email)));
+      res.setHeader('Set-Cookie', this.session.cookieHeader(this.session.create(email), isSecure(req)));
       res.redirect(safeNext(next));
     } catch (e) {
       res

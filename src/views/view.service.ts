@@ -76,6 +76,7 @@ export class ViewService {
     items: ArtifactMeta[],
     token: string,
     nav: { onlyMine: boolean; page: number; totalPages: number; total: number },
+    baseUrl: string,
   ): string {
     const meNorm = me.trim().toLowerCase();
     const list = items.length
@@ -97,8 +98,8 @@ export class ViewService {
     const prev = nav.page > 1 ? `<a href="/?page=${nav.page - 1}${q}">← 이전</a>` : '<span class="off">← 이전</span>';
     const next = nav.page < nav.totalPages ? `<a href="/?page=${nav.page + 1}${q}">다음 →</a>` : '<span class="off">다음 →</span>';
     const pager = nav.totalPages > 1 ? `<div class="pager">${prev}<span>${nav.page} / ${nav.totalPages}</span>${next}</div>` : '';
-    // 설치 파일은 앱이 직접 서빙(${baseUrl}/install/*) → 도메인 바뀌어도 자동 일관
-    const INST = `${this.baseUrl}/install`;
+    // 설치 파일은 앱이 직접 서빙(${baseUrl}/install/*) → 요청 호스트 기준
+    const INST = `${baseUrl}/install`;
     // 붙여넣으면 [설치 → 토큰 → 데모 생성 → 업로드 → 확인]까지 해주는 자연어 첫 프롬프트
     const demoStep = `그다음 "Hello, lightifact 🎉" 를 크게 보여주는 self-contained HTML(외부 CDN/스크립트 없이 CSS·JS inline) 데모를 하나 만들어서 lightifact 에 업로드하고, 반환된 공유 URL 을 열어 정상 렌더되는지 확인한 뒤 그 링크를 알려줘.`;
     const agents = [
@@ -181,11 +182,11 @@ export class ViewService {
     return this.layout('내 계정', body, 'app');
   }
 
-  settings(me: string, users: Array<{ email: string } & User>, invites: Array<{ token: string } & Invite>, sso: SsoSettings): string {
+  settings(me: string, users: Array<{ email: string } & User>, invites: Array<{ token: string } & Invite>, sso: SsoSettings, baseUrl: string): string {
     const userRows = users.map((u) => `<tr><td>${esc(u.email)}</td><td>${u.admin ? '✔' : ''}</td><td>${u.sso ? 'SSO' : 'pw'}</td>
       <td><form method="post" action="/api/users/delete" onsubmit="return confirm('삭제?')"><input type="hidden" name="email" value="${esc(u.email)}"><button ${u.email === me ? 'disabled' : ''}>삭제</button></form></td></tr>`).join('');
     const inviteRows = invites.length
-      ? invites.map((i) => `<tr><td>${esc(i.email)}</td><td><code>${esc(this.baseUrl)}/invite/${esc(i.token)}</code></td>
+      ? invites.map((i) => `<tr><td>${esc(i.email)}</td><td><code>${esc(baseUrl)}/invite/${esc(i.token)}</code></td>
         <td><form method="post" action="/api/invite/revoke"><input type="hidden" name="token" value="${esc(i.token)}"><button>취소</button></form></td></tr>`).join('')
       : '<tr><td colspan="3" class="empty">대기 중인 초대 없음</td></tr>';
     const body = `<header class="bar"><a href="/">← lightifact</a><span class="sp"></span><a href="/account">내 계정</a><span class="who">${esc(me)}</span><a href="/logout">로그아웃</a></header>
@@ -206,7 +207,7 @@ export class ViewService {
       <label><input type="checkbox" name="autoJoin" ${sso.autoJoin ? 'checked' : ''}> 허용 도메인 계정 <b>자동 가입</b> (끄면 초대/기존 사용자만 로그인)</label>
       <label><input type="checkbox" name="ssoOnly" ${sso.ssoOnly ? 'checked' : ''}> <b>SSO 전용</b> (로그인 화면에서 id/pw 제거, 비밀번호 로그인 차단 — SSO 설정된 경우만 적용)</label>
       <button>저장</button></form>
-      <p class="hint">리디렉션 URI: <code>${esc(this.baseUrl)}/oauth2/callback</code> 를 Google 콘솔에 등록하세요.</p></div>`;
+      <p class="hint">리디렉션 URI: <code>${esc(baseUrl)}/oauth2/callback</code> 를 Google 콘솔에 등록하세요.</p></div>`;
     return this.layout('설정', body, 'app');
   }
 }
