@@ -16,6 +16,10 @@ Claude Artifacts는 self-host가 안 되고, CodePen·Gist는 남의 서버, Ver
 - ⚡ **에이전트로 빠르게 공유** — Claude Code·Codex·Antigravity에서 *"이거 공유해줘"* 한 마디면 업로드 + 링크 발급.
 - 🔎 **공유 범위 설정** — `public`(목록 노출) / `private`(링크로만). 수정·삭제는 본인 또는 admin.
 
+업로드한 artifact는 sandbox iframe + strict CSP로 격리 렌더된다:
+
+![artifact 뷰어](docs/screenshot-artifact.png)
+
 ## Quickstart
 ```bash
 npm install
@@ -31,6 +35,10 @@ Docker: `docker build -t lightifact . && docker run -p 4321:4321 -v lightifact-d
 - **AI 에이전트**: 메인 화면 온보딩에서 쓰는 에이전트(Claude Code / Codex / Antigravity)를 고르면
   설치 프롬프트를 준다. 이후 *"이거 lightifact에 공유해줘"* 한 마디면 업로드 + 링크 발급.
 - **API**: `POST /artifacts` (Bearer 토큰, `{title, html}`) → `{ url }`. 수정은 `PUT /artifacts/:slug`.
+
+admin은 `/settings`에서 사용자 초대·직접 추가·Google SSO(허용 도메인/자동가입/SSO 전용)를 관리한다:
+
+![설정](docs/screenshot-settings.png)
 
 ## 주요 설정 (env, 전부 선택)
 | 변수 | 설명 |
