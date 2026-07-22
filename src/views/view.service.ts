@@ -97,19 +97,27 @@ export class ViewService {
     const prev = nav.page > 1 ? `<a href="/?page=${nav.page - 1}${q}">← 이전</a>` : '<span class="off">← 이전</span>';
     const next = nav.page < nav.totalPages ? `<a href="/?page=${nav.page + 1}${q}">다음 →</a>` : '<span class="off">다음 →</span>';
     const pager = nav.totalPages > 1 ? `<div class="pager">${prev}<span>${nav.page} / ${nav.totalPages}</span>${next}</div>` : '';
-    const aiPrompt = `lightifact 스킬을 설치하고 첫 아티팩트를 공유해줘.
+    const aiPrompt = `사내 lightifact 에 아티팩트를 만들어 공유해줘.
 
-1. https://github.com/opendev-choi/lightifact 의 .claude/skills/lightifact/ 에서 SKILL.md, share.mjs 를 받아 ~/.claude/skills/lightifact/ 에 넣어줘.
-2. ~/.zshrc 에 export LIGHTIFACT_TOKEN=${token} 를 추가해줘.
-3. "Hello, lightifact 🎉" 를 크게 보여주는 self-contained HTML 데모를 하나 만들어서, LIGHTIFACT_URL=https://lightifact.cardoc.kr 로 lightifact 에 공유하고 링크를 알려줘.`;
+1) "Hello, lightifact 🎉" 를 크게 보여주는 self-contained HTML 데모를 하나 만들어줘.
+   (외부 CDN/스크립트/폰트 없이 CSS·JS 는 inline, 이미지는 data URI)
+2) 아래 API 로 업로드하고, 응답 JSON 의 "url"(공유 링크)을 알려줘. 사내망/VPN 필요.
+
+   POST ${this.baseUrl}/artifacts
+   Header: Authorization: Bearer ${token}
+           Content-Type: application/json
+   Body:   {"title":"Hello, lightifact","html":"<만든 HTML 전체 문자열>"}
+
+   기존 것을 수정하려면 같은 형식으로 PUT ${this.baseUrl}/artifacts/<slug> (본인 소유만).
+   (Claude Code 는 /lightifact 스킬로도 가능)`;
     const body = `${this.bar(me, admin)}<div class="wrap">
       <h2>공유된 artifact</h2>
-      <p class="hint">업로드는 Claude Code 스킬 <code>/lightifact</code> 또는 API 토큰(Bearer)으로.</p>
+      <p class="hint">업로드는 아무 AI 에이전트(또는 curl)로 아래 API 호출. Claude Code면 <code>/lightifact</code> 스킬.</p>
       ${tabs}
       <ul class="list">${list}</ul>
       ${pager}
-      <details class="setup"><summary>🚀 처음이세요? — Claude Code에 이 프롬프트를 붙여넣으세요</summary>
-        <p class="hint">스킬 설치 → 토큰 설정(<code>${esc(me)}</code>) → 데모 아티팩트 생성·공유까지 한 번에 실행됩니다.</p>
+      <details class="setup"><summary>🚀 처음이세요? — 아무 AI 코딩 에이전트에든 이 프롬프트를 붙여넣으세요</summary>
+        <p class="hint">Claude Code · Cursor · 기타 — HTTP 호출 가능한 에이전트면 다 됩니다. 데모 생성 → lightifact 공유까지. (내 토큰 자동 포함)</p>
         <pre id="prompt">${esc(aiPrompt)}</pre>
         <button class="copy" onclick="navigator.clipboard.writeText(document.getElementById('prompt').textContent).then(()=>{this.textContent='프롬프트 복사됨 ✓'})">프롬프트 복사</button>
       </details></div>`;
