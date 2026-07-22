@@ -240,6 +240,11 @@ const MODE_CSS: Record<Mode, string> = {
     .pager .off{color:#8885}
     .setup{margin:20px 0 20px;border:1px solid #8886;border-radius:10px;padding:12px 14px}
     .setup summary{cursor:pointer;font-weight:600;font-size:14px}
+    .agents{display:flex;gap:6px;flex-wrap:wrap;margin:12px 0 10px}
+    .atab{font:inherit;font-size:13px;padding:5px 12px;border-radius:8px;border:1px solid #8886;background:transparent;color:inherit;cursor:pointer}
+    .atab.on{background:#4571ff;color:#fff;border-color:#4571ff}
+    .apanel.hidden{display:none}
+    .prow{display:flex;align-items:center;gap:12px;margin-top:8px}
     .setup pre{margin:10px 0 0;background:#8881;padding:11px;border-radius:8px;font-size:12px;line-height:1.5;white-space:pre-wrap;word-break:break-all;font-family:ui-monospace,monospace}
     .copy{margin-top:8px;padding:5px 12px;font-size:12px}`,
 };
