@@ -16,6 +16,9 @@ ENV PORT=4321
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY package.json ./
+# /install/* 로 서빙할 설치 파일 (앱이 BASE_URL 로 치환해 내보냄)
+COPY AGENTS.md ./AGENTS.md
+COPY .claude/skills/lightifact ./.claude/skills/lightifact
 
 # artifact/사용자/설정/세션 저장 (SQLite). k8s 에서는 PVC 마운트.
 VOLUME ["/app/data"]

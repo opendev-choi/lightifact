@@ -24,7 +24,7 @@ export class AuthMiddleware implements NestMiddleware {
     const path = (req.originalUrl || req.url).split('?')[0];
     if (this.users.count() === 0) {
       const open = ['/setup', '/api/setup', '/healthz'];
-      if (!open.includes(path)) {
+      if (!open.includes(path) && !path.startsWith('/install/')) {
         if (path.startsWith('/api/')) {
           res.status(401).json({ error: 'not initialized' });
           return;

@@ -10,6 +10,7 @@ import { AuthModule } from './auth/auth.module';
 import { SsoModule } from './sso/sso.module';
 import { ArtifactsModule } from './artifacts/artifacts.module';
 import { HealthController } from './health.controller';
+import { InstallController } from './install.controller';
 import { AuthMiddleware } from './common/auth.middleware';
 
 @Module({
@@ -27,7 +28,7 @@ import { AuthMiddleware } from './common/auth.middleware';
     SsoModule,
     ArtifactsModule,
   ],
-  controllers: [HealthController],
+  controllers: [HealthController, InstallController],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {

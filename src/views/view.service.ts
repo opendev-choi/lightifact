@@ -97,7 +97,8 @@ export class ViewService {
     const prev = nav.page > 1 ? `<a href="/?page=${nav.page - 1}${q}">← 이전</a>` : '<span class="off">← 이전</span>';
     const next = nav.page < nav.totalPages ? `<a href="/?page=${nav.page + 1}${q}">다음 →</a>` : '<span class="off">다음 →</span>';
     const pager = nav.totalPages > 1 ? `<div class="pager">${prev}<span>${nav.page} / ${nav.totalPages}</span>${next}</div>` : '';
-    const RAW = 'https://raw.githubusercontent.com/opendev-choi/lightifact/main';
+    // 설치 파일은 앱이 직접 서빙(${baseUrl}/install/*) → 도메인 바뀌어도 자동 일관
+    const INST = `${this.baseUrl}/install`;
     // 붙여넣으면 [설치 → 토큰 → 데모 생성 → 업로드 → 확인]까지 해주는 자연어 첫 프롬프트
     const demoStep = `그다음 "Hello, lightifact 🎉" 를 크게 보여주는 self-contained HTML(외부 CDN/스크립트 없이 CSS·JS inline) 데모를 하나 만들어서 lightifact 에 업로드하고, 반환된 공유 URL 을 열어 정상 렌더되는지 확인한 뒤 그 링크를 알려줘.`;
     const agents = [
@@ -106,7 +107,7 @@ export class ViewService {
         prompt: `lightifact 를 설치하고 첫 데모를 만들어 공유해줘.
 
 1) 스킬 설치: 아래를 실행해줘.
-   D=~/.claude/skills/lightifact; mkdir -p "$D"; for f in SKILL.md share.mjs; do curl -fsSL "${RAW}/.claude/skills/lightifact/$f" -o "$D/$f"; done
+   D=~/.claude/skills/lightifact; mkdir -p "$D"; for f in SKILL.md share.mjs; do curl -fsSL "${INST}/skill/$f" -o "$D/$f"; done
 2) 토큰 설정: ~/.zshrc 에 export LIGHTIFACT_TOKEN=${token} 를 추가하고 현재 셸에도 적용해줘.
 3) ${demoStep}`,
       },
@@ -114,7 +115,7 @@ export class ViewService {
         id: 'codex', label: 'Codex',
         prompt: `lightifact 를 설치하고 첫 데모를 만들어 공유해줘.
 
-1) 지침 설치: mkdir -p ~/.codex && curl -fsSL "${RAW}/AGENTS.md" >> ~/.codex/AGENTS.md 실행해줘.
+1) 지침 설치: mkdir -p ~/.codex && curl -fsSL "${INST}/AGENTS.md" >> ~/.codex/AGENTS.md 실행해줘.
 2) 토큰 설정: ~/.zshrc 에 export LIGHTIFACT_TOKEN=${token} 를 추가하고 현재 셸에도 적용해줘.
 3) ${demoStep}`,
       },
@@ -122,7 +123,7 @@ export class ViewService {
         id: 'antigravity', label: 'Antigravity',
         prompt: `lightifact 를 설치하고 첫 데모를 만들어 공유해줘.
 
-1) 워크스페이스 룰 설치: mkdir -p .agents/rules && curl -fsSL "${RAW}/AGENTS.md" -o .agents/rules/lightifact.md 실행해줘.
+1) 워크스페이스 룰 설치: mkdir -p .agents/rules && curl -fsSL "${INST}/AGENTS.md" -o .agents/rules/lightifact.md 실행해줘.
 2) 토큰 설정: ~/.zshrc 에 export LIGHTIFACT_TOKEN=${token} 를 추가하고 현재 셸에도 적용해줘.
 3) ${demoStep}`,
       },
