@@ -2,3 +2,7 @@ node_modules/
 dist/
 data/
 *.log
+
+# 내부 운영 문서/스크립트 (public 미포함)
+DEPLOY.md
+deploy.sh
