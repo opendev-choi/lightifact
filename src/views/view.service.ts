@@ -204,7 +204,7 @@ export class ViewService {
       <label><input type="checkbox" name="enabled" ${sso.enabled ? 'checked' : ''}> SSO 활성화 (로그인 화면에 Google 버튼)</label>
       <input name="clientId" placeholder="Google Client ID" value="${esc(sso.clientId)}">
       <input name="clientSecret" type="password" placeholder="Google Client Secret ${sso.clientSecret ? '(설정됨 — 변경 시 입력)' : ''}">
-      <input name="allowedDomain" placeholder="허용 도메인 (예: cardoc.kr, 비우면 전체)" value="${esc(sso.allowedDomain)}">
+      <input name="allowedDomain" placeholder="허용 도메인 (예: example.com, 비우면 전체)" value="${esc(sso.allowedDomain)}">
       <label><input type="checkbox" name="autoJoin" ${sso.autoJoin ? 'checked' : ''}> 허용 도메인 계정 <b>자동 가입</b> (끄면 초대/기존 사용자만 로그인)</label>
       <label><input type="checkbox" name="ssoOnly" ${sso.ssoOnly ? 'checked' : ''}> <b>SSO 전용</b> (로그인 화면에서 id/pw 제거, 비밀번호 로그인 차단 — SSO 설정된 경우만 적용)</label>
       <button>저장</button></form>
