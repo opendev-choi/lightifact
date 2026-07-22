@@ -13,6 +13,8 @@ export const RAW_CSP = [
   'media-src data: blob:',
   "connect-src 'none'",
   "frame-ancestors 'self'",
+  "form-action 'none'", // artifact 가 앱 엔드포인트로 폼 제출(CSRF) 못 하게 차단
+  "base-uri 'none'",
 ].join('; ');
 
 const SLUG_RE = /^[a-zA-Z0-9-]{6,64}$/;
