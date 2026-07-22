@@ -98,25 +98,39 @@ export class ViewService {
     const next = nav.page < nav.totalPages ? `<a href="/?page=${nav.page + 1}${q}">다음 →</a>` : '<span class="off">다음 →</span>';
     const pager = nav.totalPages > 1 ? `<div class="pager">${prev}<span>${nav.page} / ${nav.totalPages}</span>${next}</div>` : '';
     const RAW = 'https://raw.githubusercontent.com/opendev-choi/lightifact/main';
-    const tokenLine = `grep -q LIGHTIFACT_TOKEN ~/.zshrc || echo 'export LIGHTIFACT_TOKEN=${token}' >> ~/.zshrc`;
+    // 붙여넣으면 [설치 → 토큰 → 데모 생성 → 업로드 → 확인]까지 해주는 자연어 첫 프롬프트
+    const demoStep = `그다음 "Hello, lightifact 🎉" 를 크게 보여주는 self-contained HTML(외부 CDN/스크립트 없이 CSS·JS inline) 데모를 하나 만들어서 lightifact 에 업로드하고, 반환된 공유 URL 을 열어 정상 렌더되는지 확인한 뒤 그 링크를 알려줘.`;
     const agents = [
       {
-        id: 'claude', label: 'Claude Code', use: '"이거 공유해줘" 또는 <code>/lightifact</code> (새 세션부터)',
-        cmd: `# Claude Code — 스킬 설치\nD=~/.claude/skills/lightifact; mkdir -p "$D"\nfor f in SKILL.md share.mjs; do curl -fsSL "${RAW}/.claude/skills/lightifact/$f" -o "$D/$f"; done\n${tokenLine}`,
+        id: 'claude', label: 'Claude Code',
+        prompt: `lightifact 를 설치하고 첫 데모를 만들어 공유해줘.
+
+1) 스킬 설치: 아래를 실행해줘.
+   D=~/.claude/skills/lightifact; mkdir -p "$D"; for f in SKILL.md share.mjs; do curl -fsSL "${RAW}/.claude/skills/lightifact/$f" -o "$D/$f"; done
+2) 토큰 설정: ~/.zshrc 에 export LIGHTIFACT_TOKEN=${token} 를 추가하고 현재 셸에도 적용해줘.
+3) ${demoStep}`,
       },
       {
-        id: 'codex', label: 'Codex', use: '"lightifact 에 공유해줘" (새 세션부터)',
-        cmd: `# Codex — 전역 AGENTS.md 에 lightifact 지침 추가\nmkdir -p ~/.codex && curl -fsSL "${RAW}/AGENTS.md" >> ~/.codex/AGENTS.md\n${tokenLine}`,
+        id: 'codex', label: 'Codex',
+        prompt: `lightifact 를 설치하고 첫 데모를 만들어 공유해줘.
+
+1) 지침 설치: mkdir -p ~/.codex && curl -fsSL "${RAW}/AGENTS.md" >> ~/.codex/AGENTS.md 실행해줘.
+2) 토큰 설정: ~/.zshrc 에 export LIGHTIFACT_TOKEN=${token} 를 추가하고 현재 셸에도 적용해줘.
+3) ${demoStep}`,
       },
       {
-        id: 'antigravity', label: 'Antigravity', use: '"lightifact 에 공유해줘" (해당 워크스페이스에서)',
-        cmd: `# Antigravity — 워크스페이스 룰에 lightifact 지침 추가\nmkdir -p .agents/rules && curl -fsSL "${RAW}/AGENTS.md" -o .agents/rules/lightifact.md\n${tokenLine}`,
+        id: 'antigravity', label: 'Antigravity',
+        prompt: `lightifact 를 설치하고 첫 데모를 만들어 공유해줘.
+
+1) 워크스페이스 룰 설치: mkdir -p .agents/rules && curl -fsSL "${RAW}/AGENTS.md" -o .agents/rules/lightifact.md 실행해줘.
+2) 토큰 설정: ~/.zshrc 에 export LIGHTIFACT_TOKEN=${token} 를 추가하고 현재 셸에도 적용해줘.
+3) ${demoStep}`,
       },
     ];
     const atabs = agents.map((a, i) => `<button class="atab${i === 0 ? ' on' : ''}" data-a="${a.id}">${a.label}</button>`).join('');
     const apanels = agents.map((a, i) => `<div class="apanel${i === 0 ? '' : ' hidden'}" data-a="${a.id}">
-        <pre>${esc(a.cmd)}</pre>
-        <div class="prow"><button class="copy" data-a="${a.id}">복사</button><span class="hint">사용: ${a.use}</span></div>
+        <pre>${esc(a.prompt)}</pre>
+        <div class="prow"><button class="copy" data-a="${a.id}">프롬프트 복사</button><span class="hint">${a.label} 에 붙여넣으면 설치·데모 생성·업로드 확인까지 자동</span></div>
       </div>`).join('');
     const body = `${this.bar(me, admin)}<div class="wrap">
       <h2>공유된 artifact</h2>
@@ -124,7 +138,7 @@ export class ViewService {
       ${tabs}
       <ul class="list">${list}</ul>
       ${pager}
-      <details class="setup"><summary>🚀 처음이세요? — 쓰는 에이전트 선택 후 설치 (내 토큰 자동 포함)</summary>
+      <details class="setup"><summary>🚀 처음이세요? — 쓰는 에이전트 선택 후 이 프롬프트를 붙여넣으세요 (내 토큰 자동 포함)</summary>
         <div class="agents">${atabs}</div>
         ${apanels}
       </details></div>
