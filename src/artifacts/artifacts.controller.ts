@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Header, Param, Post, Put, Query, Req, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Header, Param, Post, Put, Query, Req, Res, UnauthorizedException, UseGuards } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { ArtifactsService, RAW_CSP } from './artifacts.service';
 import { UsersService } from '../users/users.service';
@@ -6,6 +6,7 @@ import { ViewService } from '../views/view.service';
 import { SessionGuard, WriteGuard } from '../common/guards';
 import { CurrentUser } from '../common/current-user.decorator';
 import { requestBaseUrl } from '../common/base-url';
+import { contentOrigin, isContentHost } from '../common/content-origin';
 
 @Controller()
 export class ArtifactsController {
@@ -129,13 +130,25 @@ export class ArtifactsController {
       return;
     }
     const canManage = meta.owner === me || !!this.users.get(me)?.admin;
-    res.type('text/html').send(this.view.viewer(meta, canManage));
+    // 격리 오리진이 설정돼 있으면 /raw 를 그 오리진에서 로드 (없으면 same-origin)
+    res.type('text/html').send(this.view.viewer(meta, canManage, contentOrigin() ?? ''));
   }
 
   // 원본 (strict CSP, iframe 전용)
+  // - 격리 오리진 설정 시: 그 호스트에서만 서빙, 추측불가 slug(capability)로 접근 (세션 쿠키 없음)
+  // - 미설정 시: same-origin, 세션 로그인 필요
   @Get('raw/:slug')
-  @UseGuards(SessionGuard)
-  raw(@Param('slug') slug: string, @Res() res: Response): void {
+  raw(@Param('slug') slug: string, @Req() req: Request, @Res() res: Response): void {
+    const reqHost = (req.headers['x-forwarded-host'] as string | undefined) || req.headers.host;
+    if (contentOrigin()) {
+      if (!isContentHost(reqHost)) {
+        res.status(404).send('not found'); // 메인 오리진에선 raw 차단 (격리 오리진 사용 강제)
+        return;
+      }
+      // 격리 오리진: slug 가 capability. 세션 검사 안 함.
+    } else if (!(req as any).userEmail) {
+      throw new UnauthorizedException('login required'); // same-origin: 세션 필요
+    }
     const html = this.artifacts.has(slug) ? this.artifacts.html(slug) : null;
     if (html === null) {
       res.status(404).send('not found');

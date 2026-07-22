@@ -158,7 +158,8 @@ export class ViewService {
     return this.layout('lightifact', body, 'app');
   }
 
-  viewer(meta: ArtifactMeta, canManage: boolean): string {
+  viewer(meta: ArtifactMeta, canManage: boolean, rawOrigin = ''): string {
+    const rawUrl = `${rawOrigin}/raw/${esc(meta.slug)}`; // rawOrigin 있으면 격리 오리진, 없으면 same-origin(상대)
     const isPrivate = meta.visibility === 'private';
     const visCtl = canManage
       ? `<form class="vis" method="post" action="/artifacts/${esc(meta.slug)}/visibility">
@@ -168,8 +169,8 @@ export class ViewService {
         ? '<span class="pv">🔒 비공개(링크 공유)</span>'
         : '';
     const body = `<header><a href="/" class="back">← 목록</a><span class="title">${esc(meta.title)}</span>
-      <span class="who">${esc(meta.owner)}</span>${visCtl}<a href="/raw/${esc(meta.slug)}" target="_blank">새 탭 ↗</a></header>
-      <iframe src="/raw/${esc(meta.slug)}" sandbox="allow-scripts allow-popups allow-forms" title="${esc(meta.title)}"></iframe>`;
+      <span class="who">${esc(meta.owner)}</span>${visCtl}<a href="${rawUrl}" target="_blank" rel="noopener">새 탭 ↗</a></header>
+      <iframe src="${rawUrl}" sandbox="allow-scripts allow-popups allow-forms" title="${esc(meta.title)}"></iframe>`;
     return this.layout(meta.title, body, 'viewer');
   }
 
